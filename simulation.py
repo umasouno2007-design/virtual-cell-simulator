@@ -1,103 +1,96 @@
-"""模拟控制、历史记录与状态文字。"""
+"""模拟控制、实验场景与状态判定。"""
 
 from typing import Dict, List
 
-from cell import Cell, MetabolismParameters
+from cell import CellCulture, ModelParameters
 
 
-History = List[Dict[str, float]]
+History = List[Dict[str, float | str]]
 
 
-# 教学实验预设：只改变初始环境和少量模型参数。
 PRESETS = {
-    "正常培养环境": {
-        "cell": {"glucose": 60.0, "oxygen": 70.0, "atp": 50.0, "mitochondria": 5},
-        "parameters": {},
-        "description": "资源适中，适合观察完整的有氧到缺氧过程。",
+    "标准培养": {
+        "changes": {},
+        "description": "采用所选细胞系的推荐温度、CO₂、接种密度和基础培养基。",
     },
-    "急性缺氧": {
-        "cell": {"glucose": 70.0, "oxygen": 12.0, "atp": 45.0, "mitochondria": 5},
-        "parameters": {},
-        "description": "氧气很少，可快速观察无氧代谢和乳酸堆积。",
+    "低氧培养（1% O₂）": {
+        "changes": {"oxygen_percent": 1.0, "oxygen_setpoint_percent": 1.0},
+        "description": "模拟低氧培养箱；需用实测溶氧校准传质参数。",
     },
-    "高能量需求": {
-        "cell": {"glucose": 75.0, "oxygen": 80.0, "atp": 45.0, "mitochondria": 6},
-        "parameters": {"maintenance_base": 8.0},
-        "description": "ATP 维护消耗更高，资源会更快耗尽。",
+    "酸性微环境": {
+        "changes": {"ph": 6.8},
+        "description": "从 pH 6.8 开始，观察酸化对生长和糖酵解的影响。",
     },
-    "线粒体丰富": {
-        "cell": {"glucose": 65.0, "oxygen": 85.0, "atp": 50.0, "mitochondria": 9},
-        "parameters": {"maintenance_base": 5.5},
-        "description": "有氧代谢容量较高，同时承担更多线粒体维护成本。",
+    "高密度接种": {
+        "changes": {"seeding_fraction": 0.80},
+        "description": "初始汇合度约 80%，用于观察接触抑制和营养消耗。",
     },
-    "酸性环境": {
-        "cell": {"glucose": 65.0, "oxygen": 70.0, "atp": 50.0, "mitochondria": 5, "ph": 6.7},
-        "parameters": {},
-        "description": "pH 偏低，用于观察酸性环境对代谢和健康度的影响。",
-    },
-    "毒素暴露": {
-        "cell": {"glucose": 65.0, "oxygen": 75.0, "atp": 50.0, "mitochondria": 5, "toxin": 55.0},
-        "parameters": {},
-        "description": "毒素水平较高，会抑制 ATP 生成并造成细胞损伤。",
-    },
-    "高渗脱水": {
-        "cell": {"glucose": 65.0, "oxygen": 75.0, "atp": 50.0, "mitochondria": 5, "osmolarity": 370.0},
-        "parameters": {},
-        "description": "外界渗透压较高，细胞会逐步失水。",
+    "药物暴露": {
+        "changes": {"drug_um": 10.0},
+        "description": "默认 10 µM；必须输入该药物在所选细胞系中的 IC50。",
     },
 }
 
 
-def new_simulation(preset_name: str = "正常培养环境") -> tuple[Cell, History]:
-    """按实验预设创建细胞，并记录初始数据点。"""
-    preset = PRESETS.get(preset_name, PRESETS["正常培养环境"])
-    parameters = MetabolismParameters(**preset["parameters"])
-    cell = Cell(**preset["cell"], parameters=parameters)
+def new_simulation(
+    profile_key: str = "hela",
+    preset_name: str = "标准培养",
+    culture_volume_ml: float = 10.0,
+    surface_area_cm2: float = 25.0,
+) -> tuple[CellCulture, History]:
+    """创建指定细胞系和实验场景，并保存初始数据点。"""
+
+    cell = CellCulture(
+        profile_key=profile_key,
+        culture_volume_ml=culture_volume_ml,
+        surface_area_cm2=surface_area_cm2,
+        parameters=ModelParameters(),
+    )
+    changes = PRESETS.get(preset_name, PRESETS["标准培养"])["changes"]
+    for name, value in changes.items():
+        if name == "seeding_fraction":
+            cell.viable_cells = cell.carrying_capacity * value
+        else:
+            setattr(cell, name, value)
     return cell, [cell.snapshot()]
 
 
-def run_steps(cell: Cell, history: History, steps: int = 1) -> int:
-    """最多推进 steps 步；若细胞死亡则立即停止，并返回实际步数。"""
+def run_steps(
+    cell: CellCulture, history: History, steps: int = 1, dt_h: float = 1.0
+) -> int:
+    """推进指定步数；每步记录一次带单位的数据。"""
+
     completed = 0
-    for _ in range(max(0, steps)):
+    for _ in range(max(0, int(steps))):
         if not cell.alive:
             break
-        cell.step()
+        cell.step(dt_h)
         history.append(cell.snapshot())
         completed += 1
     return completed
 
 
-def cell_status(cell: Cell) -> tuple[str, str]:
-    """按最严重问题优先，返回状态文字与 Streamlit 提示级别。"""
-    if not cell.alive:
-        return "细胞死亡", "error"
-    if cell.health <= 20:
-        return "细胞濒死", "error"
-    if cell.atp <= 8:
-        return "ATP 耗竭", "error"
-    if cell.oxygen <= 8:
-        return "严重缺氧", "error"
-    if cell.ph <= 6.6 or cell.ph >= 8.2:
-        return "严重 pH 异常", "error"
-    if cell.toxin >= 70:
-        return "严重毒性损伤", "error"
-    if cell.water_balance <= 20:
-        return "细胞严重脱水", "error"
-    if cell.water_balance >= 80:
-        return "细胞严重肿胀", "error"
-    if cell.lactate >= 65:
-        return "乳酸堆积", "warning"
-    if cell.atp < 30:
-        return "能量不足", "warning"
-    if cell.oxygen < cell.parameters.hypoxia_threshold:
-        return "轻度缺氧", "warning"
-    if not 7.1 <= cell.ph <= 7.7:
-        return "pH 异常", "warning"
-    if cell.toxin >= 20:
-        return "毒素暴露", "warning"
-    if cell.water_balance < 35:
-        return "细胞脱水", "warning"
-    if cell.water_balance > 65:
-        return "细胞肿胀", "warning"
-    return "状态正常", "success"
+def cell_status(cell: CellCulture) -> tuple[str, str]:
+    """依据可测培养指标返回当前状态与提示级别。"""
+
+    if not cell.alive or cell.viability_percent <= 10:
+        return "培养物失活", "error"
+    if cell.viability_percent < 70:
+        return "大量细胞死亡", "error"
+    if cell.ph < 6.7 or cell.ph > 7.8:
+        return "严重 pH 偏离", "error"
+    if cell.oxygen_percent < 1.0:
+        return "极低氧", "error"
+    if cell.glucose_mm < 0.2:
+        return "葡萄糖接近耗尽", "error"
+    if cell.lactate_mm > 25:
+        return "乳酸高负荷", "warning"
+    if cell.oxygen_percent < 5.0:
+        return "低氧", "warning"
+    if not 7.0 <= cell.ph <= 7.6:
+        return "pH 偏离推荐范围", "warning"
+    if cell.confluence_percent > 90:
+        return "接近满汇合，建议传代", "warning"
+    if cell.energy_index < 45:
+        return "代谢能量状态受抑", "warning"
+    return "培养状态稳定", "success"

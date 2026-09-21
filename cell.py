@@ -1,248 +1,230 @@
-"""虚拟细胞的状态与单步代谢规则。"""
+"""单位明确、可校准的细胞培养动力学模型。"""
 
-from dataclasses import dataclass, field
-from typing import ClassVar, Dict, Tuple
+from dataclasses import dataclass
+from math import exp, log
+from typing import Dict
 
-
-@dataclass
-class MetabolismParameters:
-    """可在界面中调节的教学模型参数。"""
-
-    maintenance_base: float = 5.0
-    aerobic_yield: float = 3.1
-    anaerobic_yield: float = 1.35
-    hypoxia_threshold: float = 25.0
-    lactate_rate: float = 1.8
+from profiles import CellProfile, get_profile
 
 
 @dataclass
-class Cell:
-    """保存细胞状态，并执行教学简化的能量代谢。"""
+class ModelParameters:
+    """可由实验数据拟合的模型参数。"""
 
-    glucose: float = 60.0
-    oxygen: float = 70.0
-    atp: float = 50.0
-    health: float = 100.0
-    time: int = 0
-    mitochondria: int = 5
-    lactate: float = 5.0
-    ph: float = 7.4
-    toxin: float = 0.0
-    osmolarity: float = 300.0
-    water_balance: float = 50.0
-    parameters: MetabolismParameters = field(default_factory=MetabolismParameters)
+    growth_scale: float = 1.0
+    uptake_scale: float = 1.0
+    death_rate_per_h: float = 0.001
+    glucose_half_saturation_mm: float = 0.5
+    glutamine_half_saturation_mm: float = 0.12
+    oxygen_half_saturation_percent: float = 3.0
+    lactate_inhibition_mm: float = 20.0
+    drug_ic50_um: float = 10.0
+    drug_hill: float = 1.2
+    oxygen_transfer_per_h: float = 0.35
+    buffer_capacity_mm_per_ph: float = 25.0
 
-    LIMITS: ClassVar[Dict[str, Tuple[float, float]]] = {
-        "glucose": (0.0, 100.0),
-        "oxygen": (0.0, 100.0),
-        "atp": (0.0, 100.0),
-        "health": (0.0, 100.0),
-        "mitochondria": (1.0, 12.0),
-        "lactate": (0.0, 100.0),
-        "ph": (6.0, 8.5),
-        "toxin": (0.0, 100.0),
-        "osmolarity": (200.0, 400.0),
-        "water_balance": (0.0, 100.0),
-    }
+
+class CellCulture:
+    """模拟一个贴壁细胞培养孔/瓶中的细胞群体和培养液。"""
+
+    def __init__(
+        self,
+        profile_key: str = "hela",
+        culture_volume_ml: float = 10.0,
+        surface_area_cm2: float = 25.0,
+        viable_cells: float | None = None,
+        parameters: ModelParameters | None = None,
+    ) -> None:
+        self.profile: CellProfile = get_profile(profile_key)
+        self.profile_key = self.profile.key
+        self.culture_volume_ml = max(0.1, culture_volume_ml)
+        self.surface_area_cm2 = max(0.1, surface_area_cm2)
+        self.viable_cells = viable_cells or (
+            self.profile.seeding_density_cell_cm2 * self.surface_area_cm2
+        )
+        self.dead_cells = 0.0
+        self.time_h = 0.0
+        self.glucose_mm = self.profile.initial_glucose_mm
+        self.glutamine_mm = self.profile.initial_glutamine_mm
+        self.lactate_mm = 0.0
+        self.oxygen_percent = 18.6
+        self.oxygen_setpoint_percent = 18.6
+        self.ph = 7.4
+        self.temperature_c = self.profile.temperature_c
+        self.co2_percent = self.profile.co2_percent
+        self.osmolality_mosm_kg = 300.0
+        self.drug_um = 0.0
+        self.energy_index = 100.0
+        self.parameters = parameters or ModelParameters()
+        self.last_growth_rate_per_h = 0.0
+        self.last_death_rate_per_h = 0.0
+
+    @property
+    def total_cells(self) -> float:
+        return self.viable_cells + self.dead_cells
+
+    @property
+    def viability_percent(self) -> float:
+        if self.total_cells <= 0:
+            return 0.0
+        return 100.0 * self.viable_cells / self.total_cells
+
+    @property
+    def carrying_capacity(self) -> float:
+        return self.profile.max_density_cell_cm2 * self.surface_area_cm2
+
+    @property
+    def confluence_percent(self) -> float:
+        return min(100.0, 100.0 * self.viable_cells / self.carrying_capacity)
 
     @property
     def alive(self) -> bool:
-        """健康度大于 0 时，细胞仍然存活。"""
-        return self.health > 0.0
+        return self.viable_cells >= 1.0 and self.viability_percent > 1.0
 
-    def _clamp(self, name: str, value: float) -> float:
-        """把变量限制在预设范围内，防止负数或无限增长。"""
-        lower, upper = self.LIMITS[name]
-        return max(lower, min(upper, value))
+    def growth_modifiers(self) -> Dict[str, float]:
+        """返回各环境因子对最大生长率的无量纲修正系数。"""
 
-    def add_glucose(self, amount: float = 20.0) -> None:
-        """向培养环境补充葡萄糖。"""
-        if self.alive:
-            self.glucose = self._clamp("glucose", self.glucose + amount)
-
-    def add_oxygen(self, amount: float = 25.0) -> None:
-        """向培养环境补充氧气。"""
-        if self.alive:
-            self.oxygen = self._clamp("oxygen", self.oxygen + amount)
-
-    def remove_glucose(self, amount: float = 20.0) -> None:
-        """从培养环境移除葡萄糖，最低不会小于 0。"""
-        if self.alive:
-            self.glucose = self._clamp("glucose", self.glucose - amount)
-
-    def remove_oxygen(self, amount: float = 25.0) -> None:
-        """降低培养环境中的氧气，最低不会小于 0。"""
-        if self.alive:
-            self.oxygen = self._clamp("oxygen", self.oxygen - amount)
-
-    def lower_ph(self, amount: float = 0.1) -> None:
-        """使细胞外环境更酸，教学模型最低为 pH 6.0。"""
-        if self.alive:
-            self.ph = self._clamp("ph", self.ph - amount)
-
-    def raise_ph(self, amount: float = 0.1) -> None:
-        """使细胞外环境更碱，教学模型最高为 pH 8.5。"""
-        if self.alive:
-            self.ph = self._clamp("ph", self.ph + amount)
-
-    def add_toxin(self, amount: float = 10.0) -> None:
-        """增加药物或毒素的相对浓度。"""
-        if self.alive:
-            self.toxin = self._clamp("toxin", self.toxin + amount)
-
-    def detoxify(self, amount: float = 10.0) -> None:
-        """移除部分药物或毒素，最低不会小于 0。"""
-        if self.alive:
-            self.toxin = self._clamp("toxin", self.toxin - amount)
-
-    def add_water(self, amount: float = 15.0) -> None:
-        """教学简化：加水会稀释外界溶质，降低渗透压。"""
-        if self.alive:
-            self.osmolarity = self._clamp("osmolarity", self.osmolarity - amount)
-
-    def add_solute(self, amount: float = 15.0) -> None:
-        """教学简化：增加溶质会升高外界渗透压。"""
-        if self.alive:
-            self.osmolarity = self._clamp("osmolarity", self.osmolarity + amount)
-
-    def add_mitochondrion(self) -> None:
-        """增加一个线粒体，但不超过教学模型上限。"""
-        if self.alive:
-            self.mitochondria = int(
-                self._clamp("mitochondria", self.mitochondria + 1)
-            )
-
-    def step(self) -> None:
-        """推进一个时间单位。
-
-        这是教学简化模型，并非真实生化定量模型：低氧时先进行少量
-        无氧代谢；氧气充足时，有氧 ATP 产量随线粒体数量增加，但受
-        底物、氧气和 ATP 容量共同限制。
-        """
-        if not self.alive:
-            return
-
-        # 基础代谢需求。线粒体本身也需要少量维护能量，避免无限增强。
-        maintenance_cost = self.parameters.maintenance_base + self.mitochondria * 0.12
-        low_oxygen = self.oxygen < self.parameters.hypoxia_threshold
-
-        # 教学简化：pH、毒素和渗透压共同影响代谢效率。
-        ph_efficiency = max(0.45, 1.0 - abs(self.ph - 7.4) * 0.22)
-        toxin_efficiency = max(0.40, 1.0 - self.toxin / 140.0)
-        osmotic_efficiency = max(
-            0.50, 1.0 - abs(self.osmolarity - 300.0) / 260.0
+        p = self.parameters
+        glucose = self.glucose_mm / (p.glucose_half_saturation_mm + self.glucose_mm)
+        glutamine = self.glutamine_mm / (
+            p.glutamine_half_saturation_mm + self.glutamine_mm
         )
-        environment_efficiency = ph_efficiency * toxin_efficiency * osmotic_efficiency
-
-        if low_oxygen:
-            # 教学简化：无氧代谢少量消耗葡萄糖、产生较少 ATP 和乳酸。
-            glucose_used = min(self.glucose, 2.6)
-            atp_made = glucose_used * self.parameters.anaerobic_yield
-            oxygen_used = min(self.oxygen, 0.15)
-            lactate_change = glucose_used * self.parameters.lactate_rate
-        else:
-            # 教学简化：每个线粒体提供代谢容量，但底物会成为限制因素。
-            capacity = 1.2 + self.mitochondria * 0.58
-            glucose_used = min(self.glucose, capacity, self.oxygen / 2.4)
-            oxygen_used = min(self.oxygen, glucose_used * 2.4)
-            mitochondrial_efficiency = 1.0 + min(self.mitochondria, 8) * 0.05
-            atp_made = glucose_used * self.parameters.aerobic_yield * mitochondrial_efficiency
-            # 氧气充足时乳酸逐步清除。
-            lactate_change = -min(self.lactate, 1.6)
-
-        atp_made *= environment_efficiency
-
-        self.glucose -= glucose_used
-        self.oxygen -= oxygen_used
-        self.atp += atp_made - maintenance_cost
-        self.lactate += lactate_change
-
-        # 外界高渗时细胞失水，低渗时细胞吸水；接近等渗时缓慢恢复。
-        if self.osmolarity > 315.0:
-            self.water_balance -= min(4.0, (self.osmolarity - 300.0) / 25.0)
-        elif self.osmolarity < 285.0:
-            self.water_balance += min(4.0, (300.0 - self.osmolarity) / 25.0)
-        elif self.water_balance < 50.0:
-            self.water_balance += min(1.5, 50.0 - self.water_balance)
-        elif self.water_balance > 50.0:
-            self.water_balance -= min(1.5, self.water_balance - 50.0)
-
-        # 教学简化：细胞每步只能清除极少量毒素。
-        self.toxin -= min(self.toxin, 0.15)
-
-        # ATP 过低与乳酸过高都会损伤细胞；条件良好时只允许缓慢恢复。
-        health_change = 0.0
-        if self.atp < 15.0:
-            health_change -= 7.0
-        elif self.atp < 30.0:
-            health_change -= 2.5
-
-        if self.lactate > 70.0:
-            health_change -= 6.0
-        elif self.lactate > 45.0:
-            health_change -= 2.5
-
-        ph_deviation = abs(self.ph - 7.4)
-        if ph_deviation > 1.0:
-            health_change -= 7.0
-        elif ph_deviation > 0.5:
-            health_change -= 3.0
-        elif ph_deviation > 0.25:
-            health_change -= 1.0
-
-        if self.toxin > 70.0:
-            health_change -= 8.0
-        elif self.toxin > 40.0:
-            health_change -= 4.0
-        elif self.toxin > 15.0:
-            health_change -= 1.0
-
-        if self.water_balance < 20.0 or self.water_balance > 80.0:
-            health_change -= 6.0
-        elif self.water_balance < 35.0 or self.water_balance > 65.0:
-            health_change -= 2.0
-
-        if (
-            self.atp >= 35.0
-            and self.oxygen >= self.parameters.hypoxia_threshold
-            and self.lactate < 35.0
-            and ph_deviation <= 0.25
-            and self.toxin <= 15.0
-            and 35.0 <= self.water_balance <= 65.0
-        ):
-            health_change += 0.5
-
-        self.health += health_change
-        self.time += 1
-        self._apply_limits()
-
-    def _apply_limits(self) -> None:
-        """统一修正所有有上下限的变量。"""
-        self.glucose = self._clamp("glucose", self.glucose)
-        self.oxygen = self._clamp("oxygen", self.oxygen)
-        self.atp = self._clamp("atp", self.atp)
-        self.health = self._clamp("health", self.health)
-        self.lactate = self._clamp("lactate", self.lactate)
-        self.ph = self._clamp("ph", self.ph)
-        self.toxin = self._clamp("toxin", self.toxin)
-        self.osmolarity = self._clamp("osmolarity", self.osmolarity)
-        self.water_balance = self._clamp("water_balance", self.water_balance)
-        self.mitochondria = int(
-            self._clamp("mitochondria", self.mitochondria)
+        oxygen = self.oxygen_percent / (
+            p.oxygen_half_saturation_percent + self.oxygen_percent
         )
-
-    def snapshot(self) -> Dict[str, float]:
-        """返回适合保存到历史记录的一份当前状态副本。"""
+        ph = exp(-((self.ph - 7.35) / 0.38) ** 2)
+        temperature = exp(-((self.temperature_c - 37.0) / 2.0) ** 2)
+        osmolality = exp(-((self.osmolality_mosm_kg - 300.0) / 55.0) ** 2)
+        lactate = 1.0 / (
+            1.0 + (self.lactate_mm / p.lactate_inhibition_mm) ** 2
+        )
+        drug = 1.0 / (
+            1.0 + (self.drug_um / max(0.001, p.drug_ic50_um)) ** p.drug_hill
+        )
+        contact = max(0.0, 1.0 - self.viable_cells / self.carrying_capacity)
         return {
-            "time": self.time,
-            "glucose": self.glucose,
-            "oxygen": self.oxygen,
-            "atp": self.atp,
-            "health": self.health,
-            "lactate": self.lactate,
-            "mitochondria": self.mitochondria,
-            "ph": self.ph,
-            "toxin": self.toxin,
-            "osmolarity": self.osmolarity,
-            "water_balance": self.water_balance,
+            "glucose": glucose,
+            "glutamine": glutamine,
+            "oxygen": oxygen,
+            "ph": ph,
+            "temperature": temperature,
+            "osmolality": osmolality,
+            "lactate": lactate,
+            "drug": drug,
+            "contact": contact,
         }
+
+    def step(self, dt_h: float = 1.0) -> None:
+        """用经验动力学方程推进培养状态。实验预测前必须重新拟合参数。"""
+
+        if not self.alive or dt_h <= 0:
+            return
+        dt_h = min(float(dt_h), 6.0)
+        p = self.parameters
+        modifiers = self.growth_modifiers()
+        mu_max = log(2.0) / self.profile.doubling_time_h
+        mu = mu_max * p.growth_scale
+        for value in modifiers.values():
+            mu *= value
+
+        stress = 1.0 - min(
+            modifiers["ph"], modifiers["temperature"], modifiers["osmolality"],
+            modifiers["oxygen"], modifiers["drug"],
+        )
+        death_rate = p.death_rate_per_h + 0.045 * max(0.0, stress - 0.25)
+        if self.glucose_mm < 0.1:
+            death_rate += 0.02
+        if self.glutamine_mm < 0.03:
+            death_rate += 0.012
+        if self.lactate_mm > 30.0:
+            death_rate += 0.01 * min(2.0, (self.lactate_mm - 30.0) / 10.0)
+
+        start_viable = self.viable_cells
+        new_cells = start_viable * max(0.0, exp(mu * dt_h) - 1.0)
+        deaths = min(start_viable + new_cells, start_viable * death_rate * dt_h)
+        self.viable_cells = max(0.0, start_viable + new_cells - deaths)
+        self.dead_cells += deaths
+
+        average_viable = (start_viable + self.viable_cells) / 2.0
+        glucose_umol = (
+            average_viable * self.profile.glucose_uptake_pmol_cell_h
+            * p.uptake_scale * dt_h / 1e6
+        )
+        glucose_umol = min(glucose_umol, self.glucose_mm * self.culture_volume_ml)
+        glucose_drop_mm = glucose_umol / self.culture_volume_ml
+        lactate_rise_mm = glucose_drop_mm * self.profile.lactate_yield_mol_per_mol_glucose
+        self.glucose_mm = max(0.0, self.glucose_mm - glucose_drop_mm)
+        self.lactate_mm += lactate_rise_mm
+
+        glutamine_umol = (
+            average_viable * self.profile.glutamine_uptake_pmol_cell_h
+            * p.uptake_scale * dt_h / 1e6
+        )
+        glutamine_umol = min(
+            glutamine_umol, self.glutamine_mm * self.culture_volume_ml
+        )
+        self.glutamine_mm = max(
+            0.0, self.glutamine_mm - glutamine_umol / self.culture_volume_ml
+        )
+
+        oxygen_demand = (
+            average_viable * self.profile.oxygen_uptake_pmol_cell_h
+            * p.uptake_scale * dt_h / max(1.0, self.culture_volume_ml * 2.5e5)
+        )
+        oxygen_recovery = (
+            self.oxygen_setpoint_percent - self.oxygen_percent
+        ) * p.oxygen_transfer_per_h * dt_h
+        self.oxygen_percent = max(
+            0.0, min(21.0, self.oxygen_percent + oxygen_recovery - oxygen_demand)
+        )
+
+        acid_load = lactate_rise_mm / max(1.0, p.buffer_capacity_mm_per_ph)
+        co2_shift = (self.co2_percent - self.profile.co2_percent) * 0.006 * dt_h
+        self.ph = max(6.2, min(8.0, self.ph - acid_load - co2_shift))
+
+        energy = 100.0
+        for key in ("glucose", "glutamine", "oxygen", "ph", "temperature", "drug"):
+            energy *= modifiers[key]
+        self.energy_index = max(0.0, min(100.0, energy))
+        self.drug_um = max(0.0, self.drug_um * exp(-0.003 * dt_h))
+        self.time_h += dt_h
+        self.last_growth_rate_per_h = mu
+        self.last_death_rate_per_h = death_rate
+
+    def exchange_medium(self, fraction: float = 1.0) -> None:
+        """更换指定比例培养基，1.0 表示全量换液。"""
+
+        fraction = max(0.0, min(1.0, fraction))
+        self.glucose_mm += (self.profile.initial_glucose_mm - self.glucose_mm) * fraction
+        self.glutamine_mm += (self.profile.initial_glutamine_mm - self.glutamine_mm) * fraction
+        self.lactate_mm *= 1.0 - fraction
+        self.drug_um *= 1.0 - fraction
+        self.ph += (7.4 - self.ph) * fraction
+        self.osmolality_mosm_kg += (300.0 - self.osmolality_mosm_kg) * fraction
+
+    def add_drug(self, concentration_um: float) -> None:
+        """设置药物浓度；药物效应取决于用户提供的 IC50/Hill 参数。"""
+
+        self.drug_um = max(0.0, float(concentration_um))
+
+    def snapshot(self) -> Dict[str, float | str]:
+        """返回带真实单位列名的历史记录。"""
+
+        return {
+            "time_h": self.time_h, "cell_type": self.profile_key,
+            "viable_cells": self.viable_cells, "dead_cells": self.dead_cells,
+            "viability_percent": self.viability_percent,
+            "confluence_percent": self.confluence_percent,
+            "glucose_mM": self.glucose_mm, "glutamine_mM": self.glutamine_mm,
+            "lactate_mM": self.lactate_mm, "oxygen_percent": self.oxygen_percent,
+            "pH": self.ph, "temperature_C": self.temperature_c,
+            "CO2_percent": self.co2_percent,
+            "osmolality_mOsm_kg": self.osmolality_mosm_kg,
+            "drug_uM": self.drug_um, "energy_index": self.energy_index,
+            "growth_rate_per_h": self.last_growth_rate_per_h,
+            "death_rate_per_h": self.last_death_rate_per_h,
+        }
+
+
+Cell = CellCulture
+MetabolismParameters = ModelParameters
