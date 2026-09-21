@@ -26,6 +26,10 @@ class Cell:
     time: int = 0
     mitochondria: int = 5
     lactate: float = 5.0
+    ph: float = 7.4
+    toxin: float = 0.0
+    osmolarity: float = 300.0
+    water_balance: float = 50.0
     parameters: MetabolismParameters = field(default_factory=MetabolismParameters)
 
     LIMITS: ClassVar[Dict[str, Tuple[float, float]]] = {
@@ -35,6 +39,10 @@ class Cell:
         "health": (0.0, 100.0),
         "mitochondria": (1.0, 12.0),
         "lactate": (0.0, 100.0),
+        "ph": (6.0, 8.5),
+        "toxin": (0.0, 100.0),
+        "osmolarity": (200.0, 400.0),
+        "water_balance": (0.0, 100.0),
     }
 
     @property
@@ -57,6 +65,46 @@ class Cell:
         if self.alive:
             self.oxygen = self._clamp("oxygen", self.oxygen + amount)
 
+    def remove_glucose(self, amount: float = 20.0) -> None:
+        """从培养环境移除葡萄糖，最低不会小于 0。"""
+        if self.alive:
+            self.glucose = self._clamp("glucose", self.glucose - amount)
+
+    def remove_oxygen(self, amount: float = 25.0) -> None:
+        """降低培养环境中的氧气，最低不会小于 0。"""
+        if self.alive:
+            self.oxygen = self._clamp("oxygen", self.oxygen - amount)
+
+    def lower_ph(self, amount: float = 0.1) -> None:
+        """使细胞外环境更酸，教学模型最低为 pH 6.0。"""
+        if self.alive:
+            self.ph = self._clamp("ph", self.ph - amount)
+
+    def raise_ph(self, amount: float = 0.1) -> None:
+        """使细胞外环境更碱，教学模型最高为 pH 8.5。"""
+        if self.alive:
+            self.ph = self._clamp("ph", self.ph + amount)
+
+    def add_toxin(self, amount: float = 10.0) -> None:
+        """增加药物或毒素的相对浓度。"""
+        if self.alive:
+            self.toxin = self._clamp("toxin", self.toxin + amount)
+
+    def detoxify(self, amount: float = 10.0) -> None:
+        """移除部分药物或毒素，最低不会小于 0。"""
+        if self.alive:
+            self.toxin = self._clamp("toxin", self.toxin - amount)
+
+    def add_water(self, amount: float = 15.0) -> None:
+        """教学简化：加水会稀释外界溶质，降低渗透压。"""
+        if self.alive:
+            self.osmolarity = self._clamp("osmolarity", self.osmolarity - amount)
+
+    def add_solute(self, amount: float = 15.0) -> None:
+        """教学简化：增加溶质会升高外界渗透压。"""
+        if self.alive:
+            self.osmolarity = self._clamp("osmolarity", self.osmolarity + amount)
+
     def add_mitochondrion(self) -> None:
         """增加一个线粒体，但不超过教学模型上限。"""
         if self.alive:
@@ -78,6 +126,14 @@ class Cell:
         maintenance_cost = self.parameters.maintenance_base + self.mitochondria * 0.12
         low_oxygen = self.oxygen < self.parameters.hypoxia_threshold
 
+        # 教学简化：pH、毒素和渗透压共同影响代谢效率。
+        ph_efficiency = max(0.45, 1.0 - abs(self.ph - 7.4) * 0.22)
+        toxin_efficiency = max(0.40, 1.0 - self.toxin / 140.0)
+        osmotic_efficiency = max(
+            0.50, 1.0 - abs(self.osmolarity - 300.0) / 260.0
+        )
+        environment_efficiency = ph_efficiency * toxin_efficiency * osmotic_efficiency
+
         if low_oxygen:
             # 教学简化：无氧代谢少量消耗葡萄糖、产生较少 ATP 和乳酸。
             glucose_used = min(self.glucose, 2.6)
@@ -94,10 +150,25 @@ class Cell:
             # 氧气充足时乳酸逐步清除。
             lactate_change = -min(self.lactate, 1.6)
 
+        atp_made *= environment_efficiency
+
         self.glucose -= glucose_used
         self.oxygen -= oxygen_used
         self.atp += atp_made - maintenance_cost
         self.lactate += lactate_change
+
+        # 外界高渗时细胞失水，低渗时细胞吸水；接近等渗时缓慢恢复。
+        if self.osmolarity > 315.0:
+            self.water_balance -= min(4.0, (self.osmolarity - 300.0) / 25.0)
+        elif self.osmolarity < 285.0:
+            self.water_balance += min(4.0, (300.0 - self.osmolarity) / 25.0)
+        elif self.water_balance < 50.0:
+            self.water_balance += min(1.5, 50.0 - self.water_balance)
+        elif self.water_balance > 50.0:
+            self.water_balance -= min(1.5, self.water_balance - 50.0)
+
+        # 教学简化：细胞每步只能清除极少量毒素。
+        self.toxin -= min(self.toxin, 0.15)
 
         # ATP 过低与乳酸过高都会损伤细胞；条件良好时只允许缓慢恢复。
         health_change = 0.0
@@ -111,10 +182,33 @@ class Cell:
         elif self.lactate > 45.0:
             health_change -= 2.5
 
+        ph_deviation = abs(self.ph - 7.4)
+        if ph_deviation > 1.0:
+            health_change -= 7.0
+        elif ph_deviation > 0.5:
+            health_change -= 3.0
+        elif ph_deviation > 0.25:
+            health_change -= 1.0
+
+        if self.toxin > 70.0:
+            health_change -= 8.0
+        elif self.toxin > 40.0:
+            health_change -= 4.0
+        elif self.toxin > 15.0:
+            health_change -= 1.0
+
+        if self.water_balance < 20.0 or self.water_balance > 80.0:
+            health_change -= 6.0
+        elif self.water_balance < 35.0 or self.water_balance > 65.0:
+            health_change -= 2.0
+
         if (
             self.atp >= 35.0
             and self.oxygen >= self.parameters.hypoxia_threshold
             and self.lactate < 35.0
+            and ph_deviation <= 0.25
+            and self.toxin <= 15.0
+            and 35.0 <= self.water_balance <= 65.0
         ):
             health_change += 0.5
 
@@ -129,6 +223,10 @@ class Cell:
         self.atp = self._clamp("atp", self.atp)
         self.health = self._clamp("health", self.health)
         self.lactate = self._clamp("lactate", self.lactate)
+        self.ph = self._clamp("ph", self.ph)
+        self.toxin = self._clamp("toxin", self.toxin)
+        self.osmolarity = self._clamp("osmolarity", self.osmolarity)
+        self.water_balance = self._clamp("water_balance", self.water_balance)
         self.mitochondria = int(
             self._clamp("mitochondria", self.mitochondria)
         )
@@ -143,4 +241,8 @@ class Cell:
             "health": self.health,
             "lactate": self.lactate,
             "mitochondria": self.mitochondria,
+            "ph": self.ph,
+            "toxin": self.toxin,
+            "osmolarity": self.osmolarity,
+            "water_balance": self.water_balance,
         }

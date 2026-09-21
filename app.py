@@ -58,6 +58,10 @@ def parameter_panel() -> None:
     st.sidebar.subheader("每次补充量")
     st.sidebar.slider("葡萄糖补充量", 5.0, 40.0, 20.0, 5.0, key="glucose_dose")
     st.sidebar.slider("氧气补充量", 5.0, 50.0, 25.0, 5.0, key="oxygen_dose")
+    st.sidebar.subheader("环境干预量")
+    st.sidebar.slider("每次 pH 调节", 0.05, 0.50, 0.10, 0.05, key="ph_step")
+    st.sidebar.slider("每次毒素调节", 5.0, 30.0, 10.0, 5.0, key="toxin_dose")
+    st.sidebar.slider("每次渗透压调节", 5.0, 40.0, 15.0, 5.0, key="osmolarity_step")
 
 
 def draw_cell(cell) -> None:
@@ -127,6 +131,27 @@ def plot_history(history) -> None:
     plt.close(fig)
 
 
+def plot_environment_history(history) -> None:
+    """分别绘制 pH、毒素、渗透压和细胞水分状态。"""
+    data = pd.DataFrame(history)
+    fig, axes = plt.subplots(2, 2, figsize=(10, 6.5), sharex=True)
+    charts = [
+        ("ph", "pH", "#8e79c6", (6.0, 8.5)),
+        ("toxin", "Toxin", "#d15b63", (0, 105)),
+        ("osmolarity", "Osmolarity", "#3f88c5", (195, 405)),
+        ("water_balance", "Cell water", "#36a67a", (0, 105)),
+    ]
+    for ax, (column, label, color, limits) in zip(axes.flat, charts):
+        ax.plot(data["time"], data[column], color=color, linewidth=2)
+        ax.set(title=label, ylim=limits)
+        ax.grid(alpha=0.2)
+    axes[1, 0].set_xlabel("Simulation time")
+    axes[1, 1].set_xlabel("Simulation time")
+    fig.tight_layout()
+    st.pyplot(fig)
+    plt.close(fig)
+
+
 initialize_state()
 PARAMETER_WIDGET_KEYS = [
     "param_maintenance",
@@ -139,20 +164,42 @@ parameter_panel()
 cell = st.session_state.cell
 
 st.title("虚拟细胞能量代谢模拟器")
-st.caption("V0.2 · 参数实验、预设场景与数据导出（教学简化模型）")
+st.caption("V0.3 · pH、毒素、渗透压与细胞水分（教学简化模型）")
 
 status_text, status_level = cell_status(cell)
 message = f"当前状态：{html.escape(status_text)}　｜　{st.session_state.run_mode}"
 getattr(st, status_level)(message)
 
 st.subheader("实验控制台")
-resource_cols = st.columns(3)
+resource_cols = st.columns(4)
 if resource_cols[0].button("加入葡萄糖", width="stretch", disabled=not cell.alive):
     cell.add_glucose(st.session_state.glucose_dose)
-if resource_cols[1].button("补充氧气", width="stretch", disabled=not cell.alive):
+if resource_cols[1].button("移除葡萄糖", width="stretch", disabled=not cell.alive):
+    cell.remove_glucose(st.session_state.glucose_dose)
+if resource_cols[2].button("补充氧气", width="stretch", disabled=not cell.alive):
     cell.add_oxygen(st.session_state.oxygen_dose)
-if resource_cols[2].button("增加线粒体", width="stretch", disabled=not cell.alive):
+if resource_cols[3].button("减少氧气", width="stretch", disabled=not cell.alive):
+    cell.remove_oxygen(st.session_state.oxygen_dose)
+
+if st.button("增加线粒体", width="stretch", disabled=not cell.alive):
     cell.add_mitochondrion()
+
+with st.expander("环境干预：pH、药物或毒素、渗透压与水分", expanded=True):
+    env_cols_1 = st.columns(3)
+    if env_cols_1[0].button("降低 pH", width="stretch", disabled=not cell.alive):
+        cell.lower_ph(st.session_state.ph_step)
+    if env_cols_1[1].button("升高 pH", width="stretch", disabled=not cell.alive):
+        cell.raise_ph(st.session_state.ph_step)
+    if env_cols_1[2].button("加入毒素", width="stretch", disabled=not cell.alive):
+        cell.add_toxin(st.session_state.toxin_dose)
+
+    env_cols_2 = st.columns(3)
+    if env_cols_2[0].button("清除毒素", width="stretch", disabled=not cell.alive):
+        cell.detoxify(st.session_state.toxin_dose)
+    if env_cols_2[1].button("加水稀释", width="stretch", disabled=not cell.alive):
+        cell.add_water(st.session_state.osmolarity_step)
+    if env_cols_2[2].button("增加溶质", width="stretch", disabled=not cell.alive):
+        cell.add_solute(st.session_state.osmolarity_step)
 
 control_cols = st.columns(5)
 if control_cols[0].button("运行一步", type="primary", width="stretch", disabled=not cell.alive):
@@ -194,8 +241,21 @@ with right:
         st.progress(cell.mitochondria / 12)
         st.metric("模拟时间", cell.time)
 
+    st.subheader("环境状态")
+    environment_cols = st.columns(4)
+    with environment_cols[0]:
+        st.metric("pH", f"{cell.ph:.2f}")
+    with environment_cols[1]:
+        show_metric("毒素", cell.toxin)
+    with environment_cols[2]:
+        st.metric("渗透压", f"{cell.osmolarity:.0f}", help="教学相对单位，300 附近视为等渗")
+        st.progress(max(0.0, min(1.0, (cell.osmolarity - 200.0) / 200.0)))
+    with environment_cols[3]:
+        show_metric("细胞水分", cell.water_balance)
+
 st.subheader("历史曲线")
 plot_history(st.session_state.history)
+plot_environment_history(st.session_state.history)
 
 st.subheader("实验数据")
 history_data = pd.DataFrame(st.session_state.history)
