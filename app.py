@@ -5,6 +5,7 @@ import json
 import time
 from dataclasses import asdict
 from pathlib import Path
+from uuid import uuid4
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -196,12 +197,22 @@ def save_runtime_state() -> None:
         "last_wall_time": st.session_state.get("last_wall_time", time.time()),
         "time_multiplier": st.session_state.get("time_multiplier", 60),
     }
-    temporary_path = RUNTIME_STATE_PATH.with_suffix(".json.tmp")
-    temporary_path.write_text(
-        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-        encoding="utf-8",
+    # Streamlit 的定时 fragment 和按钮回调可能并发保存。同名临时文件会被
+    # 另一个执行流先移动，从而在 Cloud 上触发 FileNotFoundError。
+    temporary_path = RUNTIME_STATE_PATH.with_name(
+        f"{RUNTIME_STATE_PATH.name}.{uuid4().hex}.tmp"
     )
-    temporary_path.replace(RUNTIME_STATE_PATH)
+    try:
+        temporary_path.write_text(
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        temporary_path.replace(RUNTIME_STATE_PATH)
+    except OSError:
+        # 云端文件系统是临时存储；保存失败不应中断正在运行的培养界面。
+        return
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def load_runtime_state() -> bool:

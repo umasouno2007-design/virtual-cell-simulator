@@ -6,3 +6,4 @@ venv/
 .streamlit/secrets.toml
 .runtime_state.json
 .runtime_state.json.tmp
+.runtime_state.json.*.tmp
