@@ -5,7 +5,7 @@
 ## 第一步：上传到 GitHub
 
 1. 注册或登录 GitHub。
-2. 新建一个仓库，例如 `virtual-cell-simulator`。
+2. 新建一个名为 `e-cell` 的仓库。
 3. 把本项目中的所有文件上传到仓库根目录。
 4. 确认仓库根目录能看到 `app.py` 和 `requirements.txt`。
 

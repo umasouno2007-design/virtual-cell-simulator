@@ -207,6 +207,14 @@ class CellCulture:
 
         self.drug_um = max(0.0, float(concentration_um))
 
+    def add_glucose(self, concentration_increase_mm: float) -> None:
+        """按培养液终浓度增量补充葡萄糖。"""
+
+        self.glucose_mm = min(
+            100.0,
+            self.glucose_mm + max(0.0, float(concentration_increase_mm)),
+        )
+
     def snapshot(self) -> Dict[str, float | str]:
         """返回带真实单位列名的历史记录。"""
 
