@@ -12,7 +12,36 @@ from simulation import PRESETS, cell_status, new_simulation, run_steps
 
 st.set_page_config(page_title="虚拟细胞培养与代谢模拟器", page_icon="🧫", layout="wide")
 
-APP_STATE_VERSION = "1.0-alpha.1"
+APP_STATE_VERSION = "1.0-alpha.2"
+
+# 这些字段是当前界面的模型校准控件必须使用的参数。
+# 除了版本号，还要检查对象结构，因为 Streamlit 热更新后可能出现：
+# 新版本号已经写入，但旧版 Cell 对象仍留在当前浏览器会话中。
+REQUIRED_PARAMETER_FIELDS = (
+    "growth_scale",
+    "uptake_scale",
+    "death_rate_per_h",
+    "drug_ic50_um",
+    "drug_hill",
+    "oxygen_transfer_per_h",
+)
+
+
+def state_needs_migration() -> bool:
+    """判断缓存会话是否与当前模型结构兼容。"""
+
+    if st.session_state.get("app_state_version") != APP_STATE_VERSION:
+        return True
+
+    cell = st.session_state.get("cell")
+    parameters = getattr(cell, "parameters", None)
+    if parameters is None:
+        return True
+
+    return any(
+        not hasattr(parameters, field_name)
+        for field_name in REQUIRED_PARAMETER_FIELDS
+    )
 
 
 def initialize_state() -> None:
@@ -20,7 +49,7 @@ def initialize_state() -> None:
 
     # Streamlit Cloud 在热更新代码时可能保留旧版本 session_state。
     # V0.3 的 Cell/参数对象与 V1.0 不兼容，因此版本变化时统一重建会话。
-    if st.session_state.get("app_state_version") != APP_STATE_VERSION:
+    if state_needs_migration():
         for key in list(st.session_state.keys()):
             del st.session_state[key]
         st.session_state.app_state_version = APP_STATE_VERSION
