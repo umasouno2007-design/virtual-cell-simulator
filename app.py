@@ -12,9 +12,18 @@ from simulation import PRESETS, cell_status, new_simulation, run_steps
 
 st.set_page_config(page_title="虚拟细胞培养与代谢模拟器", page_icon="🧫", layout="wide")
 
+APP_STATE_VERSION = "1.0-alpha.1"
+
 
 def initialize_state() -> None:
     """初始化 Streamlit 会话。"""
+
+    # Streamlit Cloud 在热更新代码时可能保留旧版本 session_state。
+    # V0.3 的 Cell/参数对象与 V1.0 不兼容，因此版本变化时统一重建会话。
+    if st.session_state.get("app_state_version") != APP_STATE_VERSION:
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.session_state.app_state_version = APP_STATE_VERSION
 
     if "profile_key" not in st.session_state:
         st.session_state.profile_key = "hela"
