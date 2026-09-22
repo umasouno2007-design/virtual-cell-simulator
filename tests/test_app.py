@@ -76,6 +76,30 @@ class AppStateTestCase(unittest.TestCase):
         )
         self.assertEqual(len(app.exception), 0)
 
+    def test_intracellular_mode_renders_organelles_and_metrics(self) -> None:
+        app_path = Path(__file__).resolve().parents[1] / "app.py"
+        app = AppTest.from_file(app_path).run(timeout=30)
+        mode = next(item for item in app.radio if item.label == "模拟模式")
+
+        mode.set_value("细胞生命活动").run(timeout=30)
+
+        cell_diagram = app.get("iframe")[0].proto.srcdoc
+        self.assertIn("atlas-card", cell_diagram)
+        self.assertIn("/app/static/cell-atlas-v1.png", cell_diagram)
+        self.assertIn("data-atp=", cell_diagram)
+        for marker in (
+            "cell-stage", "tag nucleus", "tag mitochondria", "tag rer",
+            "tag ser", "tag golgi", "tag lysosome", "mito-glow", "rosPulse",
+        ):
+            self.assertIn(marker, cell_diagram)
+        metric_grid = next(
+            item for item in app.markdown
+            if '<div class="vc-metric-grid">' in item.value
+        )
+        self.assertIn("ATP 水平", metric_grid.value)
+        self.assertIn("DNA 损伤", metric_grid.value)
+        self.assertEqual(len(app.exception), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
