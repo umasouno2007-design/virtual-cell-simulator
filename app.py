@@ -25,7 +25,11 @@ from experiment_data import (
     standardize_measurements,
 )
 from experiment_manifest import build_manifest
+from intracellular_challenges import CHALLENGES, evaluate_challenge
+from intracellular_forecast import FORECAST_INPUTS, forecast_intracellular_state
+from cell_cycle_navigation import next_cycle_checkpoint
 from observability import OBSERVABLES, observability_rows
+from virtual_assays import ASSAYS, simulate_virtual_assay
 from profiles import CELL_PROFILES
 from simulation import PRESETS, cell_status, new_simulation
 
@@ -169,6 +173,53 @@ SCHEDULED_ACTIONS = {
     "补充溶氧": {"unit": "百分点", "minimum": 0.5, "maximum": 10.0, "default": 1.0},
     "部分换液": {"unit": "%", "minimum": 10.0, "maximum": 100.0, "default": 100.0},
     "设置药物": {"unit": "µM", "minimum": 0.0, "maximum": 10000.0, "default": 1.0},
+    "施加氧化刺激": {"unit": "相对强度", "minimum": 5.0, "maximum": 80.0, "default": 20.0},
+    "增强抗氧化响应": {"unit": "相对强度", "minimum": 5.0, "maximum": 60.0, "default": 15.0},
+}
+
+ORGANELLE_OBSERVATIONS = {
+    "nucleus": {
+        "label": "细胞核与核仁", "metric": "dna_damage_percent", "unit": "%",
+        "role": "遗传信息储存与转录调控", "prompt": "观察 DNA 损伤是否随 ROS 或药物应激累积。",
+    },
+    "mitochondria": {
+        "label": "线粒体", "metric": "mitochondrial_potential_percent", "unit": "%",
+        "role": "氧化磷酸化、ATP 供应与应激整合", "prompt": "对比膜电位、ATP 与 ROS 的时间顺序。",
+    },
+    "rer": {
+        "label": "粗面内质网", "metric": "er_stress_percent", "unit": "%",
+        "role": "分泌/膜蛋白折叠与质量控制", "prompt": "在低糖、药物或 ROS 升高后观察内质网应激。",
+    },
+    "ser": {
+        "label": "滑面内质网", "metric": "cytosolic_calcium_nm", "unit": "nM",
+        "role": "脂质代谢与钙稳态", "prompt": "观察 ER 应激与胞质钙代理指标的联动。",
+    },
+    "golgi": {
+        "label": "高尔基体", "metric": "protein_synthesis_percent", "unit": "%",
+        "role": "蛋白修饰、分选与囊泡运输", "prompt": "以蛋白合成代理指标观察能量或 ER 压力的影响。",
+    },
+    "lysosome": {
+        "label": "溶酶体", "metric": "autophagy_percent", "unit": "%",
+        "role": "降解、回收与自噬通量相关过程", "prompt": "自噬百分比不是通量；应结合 LC3/p62 与抑制条件解释。",
+    },
+}
+
+PATHWAY_TRACES = {
+    "氧化应激链": {
+        "focus": "mitochondria",
+        "nodes": [("ROS", "ros_percent"), ("DNA 损伤", "dna_damage_percent"), ("凋亡信号", "apoptosis_signal_percent")],
+        "note": "ROS 与 DNA 损伤/凋亡的方向关联有文献支持；这里的权重和阈值为演示规则。",
+    },
+    "能量稳态链": {
+        "focus": "mitochondria",
+        "nodes": [("线粒体膜电位", "mitochondrial_potential_percent"), ("ATP", "atp_percent"), ("细胞周期进度", "cycle_progress_percent")],
+        "note": "膜电位、ATP 与周期推进的关系只表达模型趋势，不代表浓度或周期分布。",
+    },
+    "蛋白稳态链": {
+        "focus": "rer",
+        "nodes": [("内质网应激", "er_stress_percent"), ("自噬", "autophagy_percent"), ("蛋白合成", "protein_synthesis_percent")],
+        "note": "自噬指标不是通量；真实验证需组合检测并考虑溶酶体抑制条件。",
+    },
 }
 
 TIME_MULTIPLIERS = {
@@ -238,6 +289,11 @@ def save_runtime_state() -> None:
         "app_mode": st.session_state.get("app_mode", "细胞培养"),
         "intracellular": asdict(st.session_state.get("intracellular", IntracellularState())),
         "intracellular_history": st.session_state.get("intracellular_history", [])[-MAX_HISTORY_POINTS:],
+        "intracellular_samples": st.session_state.get("intracellular_samples", [])[-500:],
+        "intracellular_challenge": st.session_state.get("intracellular_challenge"),
+        "virtual_assay_rows": st.session_state.get("virtual_assay_rows", [])[-2000:],
+        "intracellular_baseline": st.session_state.get("intracellular_baseline"),
+        "intracellular_notes": st.session_state.get("intracellular_notes", [])[-500:],
         "events": st.session_state.get("events", [])[-500:],
         "scheduled_actions": st.session_state.get("scheduled_actions", [])[-100:],
     }
@@ -307,6 +363,15 @@ def load_runtime_state() -> bool:
         st.session_state.scheduled_actions = (
             scheduled_actions if isinstance(scheduled_actions, list) else []
         )
+        samples = payload.get("intracellular_samples", [])
+        st.session_state.intracellular_samples = samples if isinstance(samples, list) else []
+        st.session_state.intracellular_challenge = payload.get("intracellular_challenge")
+        assay_rows = payload.get("virtual_assay_rows", [])
+        st.session_state.virtual_assay_rows = assay_rows if isinstance(assay_rows, list) else []
+        baseline = payload.get("intracellular_baseline")
+        st.session_state.intracellular_baseline = baseline if isinstance(baseline, dict) else None
+        notes = payload.get("intracellular_notes", [])
+        st.session_state.intracellular_notes = notes if isinstance(notes, list) else []
         return True
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return False
@@ -360,6 +425,10 @@ def execute_due_scheduled_actions() -> bool:
             cell.exchange_medium(value / 100.0)
         elif action_type == "设置药物":
             cell.add_drug(value)
+        elif action_type == "施加氧化刺激":
+            st.session_state.intracellular.apply_oxidative_stress(value)
+        elif action_type == "增强抗氧化响应":
+            st.session_state.intracellular.apply_antioxidant_response(value)
         else:
             # 旧版或手工编辑的状态文件不应阻断连续模拟。
             action["status"] = "skipped"
@@ -525,6 +594,16 @@ def initialize_state() -> None:
         st.session_state.intracellular_history = [
             st.session_state.intracellular.snapshot()
         ]
+    if "intracellular_samples" not in st.session_state:
+        st.session_state.intracellular_samples = []
+    if "intracellular_challenge" not in st.session_state:
+        st.session_state.intracellular_challenge = None
+    if "virtual_assay_rows" not in st.session_state:
+        st.session_state.virtual_assay_rows = []
+    if "intracellular_baseline" not in st.session_state:
+        st.session_state.intracellular_baseline = None
+    if "intracellular_notes" not in st.session_state:
+        st.session_state.intracellular_notes = []
     if "events" not in st.session_state:
         st.session_state.events = []
         record_event("创建实验", "恢复或创建当前模拟的起始状态")
@@ -554,6 +633,11 @@ def reset_simulation(profile_key: str, preset_name: str, volume: float, area: fl
     st.session_state.intracellular_history = [
         st.session_state.intracellular.snapshot()
     ]
+    st.session_state.intracellular_samples = []
+    st.session_state.intracellular_challenge = None
+    st.session_state.virtual_assay_rows = []
+    st.session_state.intracellular_baseline = None
+    st.session_state.intracellular_notes = []
     st.session_state.events = []
     st.session_state.scheduled_actions = []
     record_event("创建实验", f"细胞系={profile_key}；场景={preset_name}；体积={volume:g} mL；面积={area:g} cm²")
@@ -1372,6 +1456,8 @@ def _atlas_data_uri() -> str:
 def intracellular_map(state: IntracellularState) -> None:
     """在 3D 生物医学细胞剖面图上叠加实时状态与细胞器标签。"""
 
+    focused_organelle = st.session_state.get("focused_organelle", "")
+    focus_class = lambda name: "focus" if name == focused_organelle else ""
     atlas_path = Path(__file__).with_name("assets") / "cell-atlas-v1.png"
     if not atlas_path.exists():
         st.warning("3D 细胞图资源缺失，已切换到离线矢量备用视图。")
@@ -1419,6 +1505,7 @@ def intracellular_map(state: IntracellularState) -> None:
       .cell-stage>img {{display:block;width:100%;height:100%;object-fit:cover}}
       .cell-stage::after {{content:"";position:absolute;inset:0;pointer-events:none;border:2px solid {apoptosis_color};border-radius:14px;opacity:{.18 + alert_strength * .62:.2f};box-shadow:inset 0 0 {12 + alert_strength * 28:.0f}px {apoptosis_color}}}
       .tag {{position:absolute;z-index:4;min-width:88px;padding:5px 8px;border:1px solid rgba(255,255,255,.45);border-radius:8px;background:rgba(7,31,48,.74);box-shadow:0 4px 13px rgba(0,18,32,.28);backdrop-filter:blur(5px);font-size:clamp(9px,1.15vw,13px);line-height:1.22;text-shadow:0 1px 2px #001}}
+      .tag.focus {{border-color:#f6df74;box-shadow:0 0 0 2px rgba(246,223,116,.38),0 0 20px rgba(246,223,116,.72);animation:focusPulse 1.15s ease-in-out infinite}}
       .tag b {{display:block;font-size:1.05em;color:#fff}}
       .tag small {{display:block;margin-top:2px;color:var(--signal,#bfeef5);white-space:nowrap}}
       .tag::after {{content:"";position:absolute;width:28px;border-top:1px solid rgba(255,255,255,.72);transform-origin:left center}}
@@ -1433,6 +1520,7 @@ def intracellular_map(state: IntracellularState) -> None:
       .m1{{left:24%;top:13%}} .m2{{left:51%;top:10%}} .m3{{left:72%;top:21%}} .m4{{left:83%;top:39%}} .m5{{left:68%;top:70%}} .m6{{left:43%;top:78%}} .m7{{left:16%;top:64%}}
       .ros {{position:absolute;z-index:3;width:8px;height:8px;border-radius:50%;background:{ros_color};box-shadow:0 0 12px 4px {ros_color};opacity:.72;animation:rosPulse 1.8s ease-in-out infinite}}
       @keyframes rosPulse {{50%{{opacity:.25;transform:scale(1.65)}}}}
+      @keyframes focusPulse {{50%{{transform:scale(1.04)}}}}
       .status-grid {{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;margin-top:8px}}
       .status {{padding:7px 5px;border:1px solid #d9e8ee;border-radius:9px;background:#fff;color:#607681;text-align:center;font-size:11px}}
       .status strong {{display:block;margin-top:2px;font-size:13px;color:var(--signal,#274d5d)}}
@@ -1444,12 +1532,12 @@ def intracellular_map(state: IntracellularState) -> None:
         <img src="{atlas_source}" alt="无文字的 3D 真核细胞横截面：含细胞膜、细胞核、线粒体、内质网、高尔基体、溶酶体、囊泡和核糖体">
         {mito_glows}{ros_html}
         <div class="cycle">细胞周期 {state.cycle_phase} · {state.cycle_progress_percent:.0f}%</div>
-        <div class="tag nucleus"><b>细胞核 · 核仁</b><small>DNA 损伤 {state.dna_damage_percent:.1f}%</small></div>
-        <div class="tag mitochondria"><b>线粒体</b><small>膜电位 {mito:.1f}% · {mito_label}</small></div>
-        <div class="tag rer"><b>粗面内质网</b><small>应激 {state.er_stress_percent:.1f}%</small></div>
-        <div class="tag ser"><b>滑面内质网</b><small>Ca²⁺ {state.cytosolic_calcium_nm:.0f} nM</small></div>
-        <div class="tag golgi"><b>高尔基体</b><small>加工 · 分选 · 囊泡运输</small></div>
-        <div class="tag lysosome"><b>溶酶体</b><small>自噬 {state.autophagy_percent:.1f}%</small></div>
+        <div class="tag nucleus {focus_class('nucleus')}"><b>细胞核 · 核仁</b><small>DNA 损伤 {state.dna_damage_percent:.1f}%</small></div>
+        <div class="tag mitochondria {focus_class('mitochondria')}"><b>线粒体</b><small>膜电位 {mito:.1f}% · {mito_label}</small></div>
+        <div class="tag rer {focus_class('rer')}"><b>粗面内质网</b><small>应激 {state.er_stress_percent:.1f}%</small></div>
+        <div class="tag ser {focus_class('ser')}"><b>滑面内质网</b><small>Ca²⁺ {state.cytosolic_calcium_nm:.0f} nM</small></div>
+        <div class="tag golgi {focus_class('golgi')}"><b>高尔基体</b><small>加工 · 分选 · 囊泡运输</small></div>
+        <div class="tag lysosome {focus_class('lysosome')}"><b>溶酶体</b><small>自噬 {state.autophagy_percent:.1f}%</small></div>
       </div>
       <div class="status-grid">
         <div class="status">ATP<strong style="--signal:{mito_color}">{state.atp_percent:.1f}%</strong></div>
@@ -1465,24 +1553,408 @@ def intracellular_map(state: IntracellularState) -> None:
     st.iframe(cell_html, height=720, tab_index=-1)
 
 
-def intracellular_actions(state: IntracellularState) -> None:
-    """提供用于观察细胞响应链的最小干预。"""
+def intracellular_challenge_panel(state: IntracellularState) -> None:
+    """显示演示性细胞内恢复挑战，不改写核心培养动力学。"""
 
-    st.markdown("##### 细胞刺激实验")
-    stress_col, recovery_col = st.columns(2)
-    if stress_col.button("⚡ 施加氧化刺激", width="stretch"):
-        state.apply_oxidative_stress(20.0)
+    st.markdown("###### 细胞内状态挑战")
+    challenge_key = st.selectbox(
+        "选择观察任务", list(CHALLENGES),
+        format_func=lambda key: CHALLENGES[key]["title"],
+        key="intracellular_challenge_choice",
+    )
+    challenge = CHALLENGES[challenge_key]
+    st.caption(challenge["description"])
+    active = st.session_state.get("intracellular_challenge")
+    start_col, stop_col = st.columns(2)
+    if start_col.button("🎯 启动挑战", width="stretch"):
+        starter = challenge["starter"]
+        if starter == "oxidative_stress":
+            state.apply_oxidative_stress(45.0)
+        elif starter == "er_stress":
+            state.er_stress_percent = min(100.0, state.er_stress_percent + 42.0)
+            state.protein_synthesis_percent = max(0.0, state.protein_synthesis_percent - 18.0)
+        elif starter == "energy_stress":
+            state.atp_percent = max(0.0, state.atp_percent - 35.0)
+            state.mitochondrial_potential_percent = max(0.0, state.mitochondrial_potential_percent - 28.0)
         st.session_state.intracellular_history.append(state.snapshot())
-        st.session_state.run_message = "已施加氧化刺激：ROS 与 DNA 损伤上升"
+        st.session_state.intracellular_challenge = {
+            "key": challenge_key,
+            "started_at_h": round(state.time_h, 6),
+            "completed": False,
+        }
+        record_event("启动细胞内挑战", f"{challenge['title']}；起始刺激={starter}（演示规则）")
+        st.session_state.pending_toast = (f"已启动：{challenge['title']}", "🎯")
+        save_runtime_state()
+        st.rerun()
+    if stop_col.button("结束当前挑战", width="stretch", disabled=active is None):
+        record_event("结束细胞内挑战", CHALLENGES[active["key"]]["title"])
+        st.session_state.intracellular_challenge = None
+        save_runtime_state()
+        st.rerun()
+
+    active = st.session_state.get("intracellular_challenge")
+    if active is None:
+        st.info("选择挑战并启动后，使用培养操作、刺激或时间推进观察恢复过程。")
+        return
+    report = evaluate_challenge(active["key"], state.snapshot())
+    st.progress(report["progress"], text=f"{report['title']}：{sum(item['passed'] for item in report['checks'])}/{len(report['checks'])} 个检查点达成")
+    results = pd.DataFrame([
+        {
+            "检查点": item["label"], "当前值": f"{item['value']:.1f}%",
+            "目标": f"{item['operator']} {item['threshold']:.1f}%",
+            "状态": "达成" if item["passed"] else "待恢复",
+        }
+        for item in report["checks"]
+    ])
+    st.dataframe(results, hide_index=True, width="stretch")
+    if report["completed"] and not active.get("completed"):
+        active["completed"] = True
+        active["completed_at_h"] = round(state.time_h, 6)
+        record_event("完成细胞内挑战", report["title"])
+        st.toast(f"挑战完成：{report['title']}", icon="🏁")
+        save_runtime_state()
+
+
+def intracellular_notebook_panel(state: IntracellularState) -> None:
+    """保存用户对当前细胞内状态的观察与假设，不生成科学结论。"""
+
+    with st.expander("细胞内观察笔记", expanded=False):
+        st.caption("记录的是用户假设和模型状态快照，需由后续实测验证。")
+        focus = st.selectbox(
+            "观察焦点", ["能量代谢", "氧化应激", "DNA 损伤", "内质网应激", "自噬", "凋亡", "细胞周期"],
+            key="intracellular_note_focus",
+        )
+        text = st.text_area(
+            "观察或假设", placeholder="例如：抗氧化响应后 ROS 先下降，DNA 损伤需要更长时间恢复。",
+            key="intracellular_note_text",
+        )
+        if st.button("📝 保存观察笔记", width="stretch"):
+            content = text.strip()
+            if not content:
+                st.warning("请先输入观察或假设。")
+            else:
+                snapshot = state.snapshot()
+                st.session_state.intracellular_notes.append({
+                    "time_h": round(state.time_h, 6), "cycle_phase": state.cycle_phase,
+                    "focus": focus, "note": content,
+                    "ATP_percent": round(state.atp_percent, 3),
+                    "ROS_percent": round(state.ros_percent, 3),
+                    "mitochondrial_potential_percent": round(state.mitochondrial_potential_percent, 3),
+                    "ER_stress_percent": round(state.er_stress_percent, 3),
+                    "DNA_damage_percent": round(state.dna_damage_percent, 3),
+                    "apoptosis_signal_percent": round(state.apoptosis_signal_percent, 3),
+                    "state_snapshot": json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")),
+                })
+                st.session_state.intracellular_notes = st.session_state.intracellular_notes[-500:]
+                record_event("保存细胞内观察笔记", focus)
+                st.toast("观察笔记已保存到本次实验记录", icon="📝")
+                save_runtime_state()
+        notes = st.session_state.get("intracellular_notes", [])
+        if notes:
+            st.dataframe(pd.DataFrame(notes).iloc[::-1].head(10), hide_index=True, width="stretch")
+            st.download_button(
+                "下载观察笔记 CSV", data=pd.DataFrame(notes).to_csv(index=False).encode("utf-8-sig"),
+                file_name="e_cell_intracellular_observations.csv", mime="text/csv",
+                key="download_intracellular_notes",
+            )
+
+
+def pathway_trace_panel(state: IntracellularState) -> None:
+    """将当前内部状态组织成可探索的演示性因果链。"""
+
+    with st.expander("细胞内因果链追踪", expanded=False):
+        trace_key = st.selectbox("选择信号链", list(PATHWAY_TRACES), key="pathway_trace_choice")
+        trace = PATHWAY_TRACES[trace_key]
+        if st.button("✨ 高亮并追踪此链", width="stretch"):
+            st.session_state.focused_organelle = trace["focus"]
+            record_event("追踪细胞内信号链", trace_key)
+            save_runtime_state()
+        nodes = []
+        for label, metric in trace["nodes"]:
+            value = float(getattr(state, metric))
+            nodes.append(
+                f'<div class="vc-state-pill"><span>{html.escape(label)}</span><strong>{value:.1f}%</strong></div>'
+            )
+        st.markdown(
+            '<div class="vc-state-ribbon">' + '<div class="vc-state-pill">上游环境/刺激<strong>当前模型输入</strong></div>'
+            + "".join(nodes) + '<div class="vc-state-pill">细胞命运<strong>持续观察</strong></div></div>',
+            unsafe_allow_html=True,
+        )
+        st.caption(trace["note"])
+
+
+def intracellular_comparison_panel(state: IntracellularState) -> None:
+    """让用户保存一个细胞内基线并比较后续干预的相对变化。"""
+
+    with st.expander("干预前后状态对比", expanded=False):
+        st.caption("对比的是同一模拟中的相对功能指数；不是配对湿实验、统计检验或因果证明。")
+        baseline_col, clear_col = st.columns(2)
+        if baseline_col.button("📍 设为当前基线", width="stretch"):
+            st.session_state.intracellular_baseline = {
+                "captured_at_h": round(state.time_h, 6),
+                "cycle_phase": state.cycle_phase,
+                "snapshot": state.snapshot(),
+            }
+            record_event("记录细胞内基线", f"time={state.time_h:.2f} h；周期={state.cycle_phase}")
+            st.toast("当前细胞内状态已设为对比基线", icon="📍")
+            save_runtime_state()
+        baseline = st.session_state.get("intracellular_baseline")
+        if clear_col.button("清除基线", width="stretch", disabled=baseline is None):
+            st.session_state.intracellular_baseline = None
+            save_runtime_state()
+            st.rerun()
+        baseline = st.session_state.get("intracellular_baseline")
+        if baseline is None:
+            st.info("先记录一个基线，再施加刺激、调整培养条件或推进时间。")
+            return
+        current = state.snapshot()
+        rows = []
+        for metric, label in (
+            ("ATP_percent", "ATP"),
+            ("mitochondrial_potential_percent", "线粒体膜电位"),
+            ("ROS_percent", "ROS"),
+            ("DNA_damage_percent", "DNA 损伤"),
+            ("ER_stress_percent", "内质网应激"),
+            ("autophagy_percent", "自噬"),
+            ("apoptosis_signal_percent", "凋亡信号"),
+            ("cycle_progress_percent", "细胞周期进度"),
+        ):
+            previous = float(baseline["snapshot"][metric])
+            now = float(current[metric])
+            rows.append({
+                "指标": label, "基线": round(previous, 2), "当前": round(now, 2),
+                "变化（百分点）": round(now - previous, 2),
+            })
+        comparison = pd.DataFrame(rows)
+        st.caption(
+            f"基线：{baseline['captured_at_h']:.2f} h / {baseline['cycle_phase']} ｜"
+            f"当前：{state.time_h:.2f} h / {state.cycle_phase}"
+        )
+        st.dataframe(comparison, hide_index=True, width="stretch")
+        st.download_button(
+            "下载状态对比 CSV", data=comparison.to_csv(index=False).encode("utf-8-sig"),
+            file_name="e_cell_intracellular_baseline_comparison.csv", mime="text/csv",
+            key="download_intracellular_comparison",
+        )
+
+
+def cell_cycle_navigator_panel(state: IntracellularState) -> None:
+    """让用户以共享模拟时钟观察细胞周期检查点。"""
+
+    with st.expander("细胞周期导航", expanded=False):
+        checkpoint = next_cycle_checkpoint(
+            state.cycle_progress_percent, state.growth_signal_percent,
+            st.session_state.cell.profile.doubling_time_h,
+        )
+        st.progress(
+            state.cycle_progress_percent / 100.0,
+            text=f"当前 {state.cycle_phase} 期 · 周期进度 {state.cycle_progress_percent:.1f}%",
+        )
+        estimate = checkpoint["estimated_hours"]
+        st.info(
+            f"下一检查点：**{checkpoint['next_phase']} 期**。按当前增长信号估算约需 {estimate:.1f} h。"
+        )
+        advance_h = min(24.0, max(0.25, estimate))
+        if st.button(
+            f"推进 {advance_h:.1f} h，观察下一检查点", key="advance_cycle_checkpoint", width="stretch",
+            disabled=not st.session_state.cell.alive,
+        ):
+            advance_realtime()
+            completed_h = advance_simulation_hours(advance_h)
+            record_event(
+                "细胞周期导航推进",
+                f"目标={checkpoint['next_phase']}期；请求={advance_h:.2f} h；实际={completed_h:.2f} h（演示估算）",
+            )
+            st.session_state.run_message = f"细胞周期导航已推进 {completed_h:.2f} h"
+            st.session_state.pending_toast = ("细胞周期与细胞器状态已更新", "🧬")
+            save_runtime_state()
+            st.rerun()
+        st.caption("周期阶段比例与预计时间来自演示性周期规则和当前模型增长信号，不是流式细胞术或同步化实验结果。")
+
+
+def intracellular_forecast_panel(cell, state: IntracellularState) -> None:
+    """交互式预览候选培养条件对内部状态的趋势影响。"""
+
+    with st.expander("细胞内条件沙盒", expanded=False):
+        st.caption("沙盒会复制当前状态进行预测，不会改写正在运行的实验；所有结果仍是未校准的模型趋势。")
+        input_key = st.selectbox(
+            "候选条件", list(FORECAST_INPUTS),
+            format_func=lambda key: FORECAST_INPUTS[key]["label"], key="forecast_input",
+        )
+        specification = FORECAST_INPUTS[input_key]
+        value_col, horizon_col, run_col = st.columns([1, 1, 0.8])
+        candidate_value = value_col.slider(
+            f"候选{specification['label']}（{specification['unit']}）",
+            float(specification["low"]), float(specification["high"]), float(specification["default"]),
+            key="forecast_value",
+        )
+        horizon_h = horizon_col.slider("预测时长（h）", 1.0, 24.0, 6.0, 1.0, key="forecast_horizon")
+        if run_col.button("运行沙盒预测", width="stretch"):
+            st.session_state.intracellular_forecast = forecast_intracellular_state(
+                cell, state, attribute=input_key, value=candidate_value, horizon_h=horizon_h
+            )
+            record_event(
+                "运行细胞内条件沙盒",
+                f"{specification['label']}={candidate_value:g}{specification['unit']}；{horizon_h:g} h（不改写实验）",
+            )
+        report = st.session_state.get("intracellular_forecast")
+        if report is None:
+            st.info("设置一个候选条件并运行预测，即可查看与当前状态的差异。")
+            return
+        current = state.snapshot()
+        future = report["candidate_state"]
+        rows = []
+        for metric, label in (
+            ("ATP_percent", "ATP"), ("mitochondrial_potential_percent", "线粒体膜电位"),
+            ("ROS_percent", "ROS"), ("ER_stress_percent", "内质网应激"),
+            ("autophagy_percent", "自噬"), ("apoptosis_signal_percent", "凋亡信号"),
+        ):
+            rows.append({
+                "指标": label, "当前": round(float(current[metric]), 2),
+                "候选预测": round(float(future[metric]), 2),
+                "变化（百分点）": round(float(future[metric]) - float(current[metric]), 2),
+            })
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+        st.caption(
+            f"候选：{FORECAST_INPUTS[report['input']['attribute']]['label']}="
+            f"{report['input']['value']:g}{FORECAST_INPUTS[report['input']['attribute']]['unit']}；"
+            f"已预测 {report['completed_h']:.2f} h。请在培养操作中手动应用经过审查的条件。"
+        )
+
+
+def virtual_assay_panel(state: IntracellularState) -> None:
+    """从当前内部相对指数生成明确标记的演示性虚拟检测结果。"""
+
+    with st.expander("虚拟多重检测台", expanded=False):
+        st.warning("结果为演示性合成读出，不是仪器数据、标准曲线或可用于实验决策的定量结果。")
+        assay_key = st.selectbox(
+            "选择虚拟检测", list(ASSAYS),
+            format_func=lambda key: ASSAYS[key]["label"], key="virtual_assay_choice",
+        )
+        assay = ASSAYS[assay_key]
+        settings_col, generate_col = st.columns([2, 1])
+        replicates = settings_col.slider("重复孔数", 1, 6, 3, key="virtual_assay_replicates")
+        noise_percent = settings_col.slider(
+            "演示性孔间变异（%）", 0.0, 15.0, 5.0, 0.5, key="virtual_assay_noise"
+        )
+        settings_col.caption(assay["note"])
+        if generate_col.button("生成虚拟读板", width="stretch"):
+            run_number = len(st.session_state.virtual_assay_rows) + 1
+            rows = simulate_virtual_assay(
+                assay_key, state.snapshot(), replicates=replicates,
+                noise_percent=noise_percent, seed=run_number,
+            )
+            for row in rows:
+                row.update({
+                    "run": run_number,
+                    "time_h": round(state.time_h, 6),
+                    "cycle_phase": state.cycle_phase,
+                })
+            st.session_state.virtual_assay_rows.extend(rows)
+            st.session_state.virtual_assay_rows = st.session_state.virtual_assay_rows[-2000:]
+            record_event(
+                "生成虚拟检测", f"{assay['label']}；n={replicates}；变异={noise_percent:g}%（合成演示）"
+            )
+            st.toast(f"已生成 {replicates} 个 {assay['label']} 虚拟重复孔", icon="🧪")
+            save_runtime_state()
+
+        rows = st.session_state.get("virtual_assay_rows", [])
+        if rows:
+            st.dataframe(pd.DataFrame(rows).iloc[::-1].head(18), hide_index=True, width="stretch")
+            st.download_button(
+                "下载虚拟读板 CSV", data=pd.DataFrame(rows).to_csv(index=False).encode("utf-8-sig"),
+                file_name="e_cell_virtual_assay_demo.csv", mime="text/csv",
+                key="download_virtual_assay_rows",
+            )
+
+
+def intracellular_actions(state: IntracellularState) -> None:
+    """提供可调扰动与虚拟采样，用于观察细胞响应链。"""
+
+    st.markdown("##### 细胞刺激与虚拟采样")
+    stress_col, recovery_col = st.columns(2)
+    stress_intensity = stress_col.slider(
+        "氧化刺激强度", min_value=5.0, max_value=80.0, value=20.0, step=5.0,
+        key="oxidative_stress_intensity",
+    )
+    recovery_intensity = recovery_col.slider(
+        "抗氧化响应强度", min_value=5.0, max_value=60.0, value=15.0, step=5.0,
+        key="antioxidant_response_intensity",
+    )
+    if stress_col.button("⚡ 施加氧化刺激", width="stretch"):
+        state.apply_oxidative_stress(stress_intensity)
+        st.session_state.intracellular_history.append(state.snapshot())
+        st.session_state.run_message = f"已施加氧化刺激（强度 {stress_intensity:g}）：ROS 与 DNA 损伤上升"
         st.toast("氧化刺激已施加，继续推进时间可观察下游响应", icon="⚡")
+        record_event("施加氧化刺激", f"强度={stress_intensity:g}（演示性相对指数）")
         save_runtime_state()
     if recovery_col.button("🛡️ 增强抗氧化响应", width="stretch"):
-        state.apply_antioxidant_response(15.0)
+        state.apply_antioxidant_response(recovery_intensity)
         st.session_state.intracellular_history.append(state.snapshot())
-        st.session_state.run_message = "抗氧化响应增强：ROS 降低"
+        st.session_state.run_message = f"抗氧化响应增强（强度 {recovery_intensity:g}）：ROS 降低"
         st.toast("ROS 清除增强；DNA 损伤仍需随时间修复", icon="🛡️")
+        record_event("增强抗氧化响应", f"强度={recovery_intensity:g}（演示性相对指数）")
         save_runtime_state()
-    st.caption("环境仍由左侧实验设计和培养操作控制；氧、葡萄糖、pH、药物会传递到细胞内部模型。")
+
+    st.markdown("###### 记录虚拟采样")
+    sample_col, readout_col, capture_col = st.columns([1, 1, 0.8])
+    sample_name = sample_col.text_input("样本名称", value="Sample", key="intracellular_sample_name")
+    readout_label, readout_key = readout_col.selectbox(
+        "重点读出", [
+            ("ATP", "ATP_percent"), ("ROS", "ROS_percent"),
+            ("线粒体膜电位", "mitochondrial_potential_percent"),
+            ("DNA 损伤", "DNA_damage_percent"), ("内质网应激", "ER_stress_percent"),
+            ("凋亡信号", "apoptosis_signal_percent"),
+        ], format_func=lambda item: item[0], key="intracellular_readout",
+    )
+    if capture_col.button("🔬 记录采样", width="stretch"):
+        snapshot = state.snapshot()
+        st.session_state.intracellular_samples.append({
+            "sample_name": sample_name.strip() or "Sample",
+            "time_h": round(state.time_h, 6),
+            "cycle_phase": state.cycle_phase,
+            "focus_readout": readout_label,
+            "focus_value_percent": round(float(snapshot[readout_key]), 4),
+            **snapshot,
+        })
+        st.session_state.intracellular_samples = st.session_state.intracellular_samples[-500:]
+        record_event("记录虚拟采样", f"{sample_name.strip() or 'Sample'}；{readout_label}={float(snapshot[readout_key]):.1f}%")
+        st.toast(f"已记录 {readout_label} 虚拟读出", icon="🔬")
+        save_runtime_state()
+
+    samples = st.session_state.get("intracellular_samples", [])
+    if samples:
+        st.caption(f"已记录 {len(samples)} 个虚拟样本；可作为交互观察笔记导出。")
+        st.download_button(
+            "下载虚拟采样 CSV", data=pd.DataFrame(samples).to_csv(index=False).encode("utf-8-sig"),
+            file_name="e_cell_intracellular_virtual_samples.csv", mime="text/csv",
+            key="download_intracellular_samples",
+        )
+    intracellular_challenge_panel(state)
+    intracellular_notebook_panel(state)
+    pathway_trace_panel(state)
+    intracellular_comparison_panel(state)
+    cell_cycle_navigator_panel(state)
+    intracellular_forecast_panel(st.session_state.cell, state)
+    virtual_assay_panel(state)
+    st.markdown("###### 细胞器观察台")
+    organelle_key = st.selectbox(
+        "选择要定位的细胞器", list(ORGANELLE_OBSERVATIONS),
+        format_func=lambda key: ORGANELLE_OBSERVATIONS[key]["label"],
+        key="organelle_observation_target",
+    )
+    observation = ORGANELLE_OBSERVATIONS[organelle_key]
+    current_value = float(getattr(state, observation["metric"]))
+    observe_col, detail_col = st.columns([0.85, 2.15])
+    if observe_col.button("🔎 定位并观察", width="stretch"):
+        st.session_state.focused_organelle = organelle_key
+        record_event("定位细胞器", f"{observation['label']}；{observation['metric']}={current_value:.1f}{observation['unit']}")
+        save_runtime_state()
+    detail_col.info(
+        f"**{observation['label']}**｜当前代理读出：{current_value:.1f}{observation['unit']}\n\n"
+        f"{observation['role']}。{observation['prompt']}"
+    )
+    st.caption("刺激强度、虚拟采样和百分比仅用于趋势探索，不能替代 ROS、ATP、膜电位或 DNA 损伤的实测定量。环境仍由培养操作控制。")
 
 
 def plot_intracellular_history(history) -> None:

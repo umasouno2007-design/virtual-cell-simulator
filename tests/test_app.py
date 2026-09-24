@@ -98,6 +98,26 @@ class AppStateTestCase(unittest.TestCase):
         self.assertEqual(app.session_state["events"][-2]["event"], "计划执行：补充葡萄糖")
         self.assertEqual(len(app.exception), 0)
 
+    def test_scheduled_intracellular_stress_is_applied_at_its_time(self) -> None:
+        app_path = Path(__file__).resolve().parents[1] / "app.py"
+        app = AppTest.from_file(app_path).run(timeout=30)
+        start_time = app.session_state["cell"].time_h
+        initial_ros = app.session_state["intracellular"].ros_percent
+        app.session_state["scheduled_actions"] = [{
+            "at_time_h": start_time + 0.25,
+            "action": "施加氧化刺激",
+            "value": 30.0,
+            "status": "pending",
+        }]
+        advance_button = next(item for item in app.button if item.label == "单步推进")
+        advance_button.click().run(timeout=30)
+
+        action = app.session_state["scheduled_actions"][0]
+        self.assertEqual(action["status"], "executed")
+        self.assertGreater(app.session_state["intracellular"].ros_percent, initial_ros + 20.0)
+        self.assertEqual(app.session_state["events"][-2]["event"], "计划执行：施加氧化刺激")
+        self.assertEqual(len(app.exception), 0)
+
     def test_intracellular_mode_renders_organelles_and_metrics(self) -> None:
         app_path = Path(__file__).resolve().parents[1] / "app.py"
         app = AppTest.from_file(app_path).run(timeout=30)
@@ -120,6 +140,75 @@ class AppStateTestCase(unittest.TestCase):
         )
         self.assertIn("ATP 水平", metric_grid.value)
         self.assertIn("DNA 损伤", metric_grid.value)
+        self.assertEqual(len(app.exception), 0)
+
+    def test_intracellular_virtual_sample_is_recorded_and_traceable(self) -> None:
+        app_path = Path(__file__).resolve().parents[1] / "app.py"
+        app = AppTest.from_file(app_path).run(timeout=30)
+        mode = next(item for item in app.radio if item.label == "模拟模式")
+        mode.set_value("细胞生命活动").run(timeout=30)
+        sample_button = next(item for item in app.button if item.label == "🔬 记录采样")
+        sample_button.click().run(timeout=30)
+
+        sample = app.session_state["intracellular_samples"][-1]
+        self.assertEqual(sample["focus_readout"], "ATP")
+        self.assertEqual(app.session_state["events"][-1]["event"], "记录虚拟采样")
+        self.assertEqual(len(app.exception), 0)
+
+    def test_virtual_assay_plate_is_explicitly_marked_as_synthetic(self) -> None:
+        app_path = Path(__file__).resolve().parents[1] / "app.py"
+        app = AppTest.from_file(app_path).run(timeout=30)
+        mode = next(item for item in app.radio if item.label == "模拟模式")
+        mode.set_value("细胞生命活动").run(timeout=30)
+        plate_button = next(item for item in app.button if item.label == "生成虚拟读板")
+        plate_button.click().run(timeout=30)
+
+        rows = app.session_state["virtual_assay_rows"]
+        self.assertEqual(len(rows), 3)
+        self.assertTrue(all(row["is_synthetic_demo"] for row in rows))
+        self.assertEqual(app.session_state["events"][-1]["event"], "生成虚拟检测")
+        self.assertEqual(len(app.exception), 0)
+
+    def test_intracellular_baseline_can_be_saved_for_intervention_comparison(self) -> None:
+        app_path = Path(__file__).resolve().parents[1] / "app.py"
+        app = AppTest.from_file(app_path).run(timeout=30)
+        mode = next(item for item in app.radio if item.label == "模拟模式")
+        mode.set_value("细胞生命活动").run(timeout=30)
+        baseline_button = next(item for item in app.button if item.label == "📍 设为当前基线")
+        baseline_button.click().run(timeout=30)
+
+        baseline = app.session_state["intracellular_baseline"]
+        self.assertIsNotNone(baseline)
+        self.assertIn("ATP_percent", baseline["snapshot"])
+        self.assertEqual(app.session_state["events"][-1]["event"], "记录细胞内基线")
+        self.assertEqual(len(app.exception), 0)
+
+    def test_intracellular_observation_note_captures_hypothesis_and_state(self) -> None:
+        app_path = Path(__file__).resolve().parents[1] / "app.py"
+        app = AppTest.from_file(app_path).run(timeout=30)
+        mode = next(item for item in app.radio if item.label == "模拟模式")
+        mode.set_value("细胞生命活动").run(timeout=30)
+        note_input = next(item for item in app.text_area if item.label == "观察或假设")
+        note_input.set_value("ROS 的变化需要实测确认。").run(timeout=30)
+        note_button = next(item for item in app.button if item.label == "📝 保存观察笔记")
+        note_button.click().run(timeout=30)
+
+        note = app.session_state["intracellular_notes"][-1]
+        self.assertEqual(note["focus"], "能量代谢")
+        self.assertIn("ROS", note["note"])
+        self.assertEqual(app.session_state["events"][-1]["event"], "保存细胞内观察笔记")
+        self.assertEqual(len(app.exception), 0)
+
+    def test_pathway_trace_highlights_related_organelle(self) -> None:
+        app_path = Path(__file__).resolve().parents[1] / "app.py"
+        app = AppTest.from_file(app_path).run(timeout=30)
+        mode = next(item for item in app.radio if item.label == "模拟模式")
+        mode.set_value("细胞生命活动").run(timeout=30)
+        trace_button = next(item for item in app.button if item.label == "✨ 高亮并追踪此链")
+        trace_button.click().run(timeout=30)
+
+        self.assertEqual(app.session_state["focused_organelle"], "mitochondria")
+        self.assertEqual(app.session_state["events"][-1]["event"], "追踪细胞内信号链")
         self.assertEqual(len(app.exception), 0)
 
 
