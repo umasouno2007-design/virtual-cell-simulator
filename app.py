@@ -3,6 +3,7 @@
 import html
 import json
 import time
+import base64
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -158,7 +159,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-APP_STATE_VERSION = "1.0-alpha.7"
+APP_STATE_VERSION = "1.0-alpha.8"
 RUNTIME_STATE_PATH = Path(__file__).with_name(".runtime_state.json")
 MAX_HISTORY_POINTS = 2000
 
@@ -1208,12 +1209,27 @@ def _intracellular_svg_fallback(state: IntracellularState) -> None:
     st.iframe(cell_html, height=700, tab_index=-1)
 
 
+@st.cache_data(show_spinner=False)
+def _atlas_data_uri() -> str:
+    """把本地 PNG 嵌入 iframe，避免移动端静态路径加载失败。"""
+
+    atlas_path = Path(__file__).with_name("assets") / "cell-atlas-v1.png"
+    encoded = base64.b64encode(atlas_path.read_bytes()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
+
+
 def intracellular_map(state: IntracellularState) -> None:
     """在 3D 生物医学细胞剖面图上叠加实时状态与细胞器标签。"""
 
     atlas_path = Path(__file__).with_name("assets") / "cell-atlas-v1.png"
     if not atlas_path.exists():
         st.warning("3D 细胞图资源缺失，已切换到离线矢量备用视图。")
+        _intracellular_svg_fallback(state)
+        return
+    try:
+        atlas_source = _atlas_data_uri()
+    except OSError:
+        st.warning("3D 细胞图资源无法读取，已切换到离线矢量备用视图。")
         _intracellular_svg_fallback(state)
         return
 
@@ -1274,7 +1290,7 @@ def intracellular_map(state: IntracellularState) -> None:
     </style>
     <div class="atlas-card" data-atp="{state.atp_percent:.1f}" data-ros="{state.ros_percent:.1f}">
       <div class="cell-stage" role="img" aria-label="3D 真核细胞横截面及实时细胞器状态">
-        <img src="/app/static/cell-atlas-v1.png" alt="无文字的 3D 真核细胞横截面：含细胞膜、细胞核、线粒体、内质网、高尔基体、溶酶体、囊泡和核糖体">
+        <img src="{atlas_source}" alt="无文字的 3D 真核细胞横截面：含细胞膜、细胞核、线粒体、内质网、高尔基体、溶酶体、囊泡和核糖体">
         {mito_glows}{ros_html}
         <div class="cycle">细胞周期 {state.cycle_phase} · {state.cycle_progress_percent:.0f}%</div>
         <div class="tag nucleus"><b>细胞核 · 核仁</b><small>DNA 损伤 {state.dna_damage_percent:.1f}%</small></div>
@@ -1386,7 +1402,7 @@ sidebar()
 cell = st.session_state.cell
 
 st.title("e-cell")
-st.caption("细胞培养与细胞生命活动模拟器 · V1.0-alpha.7 · 双模式、共享环境与时间")
+st.caption("细胞培养与细胞生命活动模拟器 · V1.0-alpha.8 · 双模式、共享环境与时间")
 st.error("研究原型：可用于假设探索和实验设计辅助；尚未经过实验验证，不能替代湿实验。")
 
 pending_toast = st.session_state.pop("pending_toast", None)

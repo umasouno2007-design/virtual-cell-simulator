@@ -86,7 +86,7 @@ class AppStateTestCase(unittest.TestCase):
 
         cell_diagram = app.get("iframe")[0].proto.srcdoc
         self.assertIn("atlas-card", cell_diagram)
-        self.assertIn("/app/static/cell-atlas-v1.png", cell_diagram)
+        self.assertIn("data:image/png;base64,", cell_diagram)
         self.assertIn("data-atp=", cell_diagram)
         for marker in (
             "cell-stage", "tag nucleus", "tag mitochondria", "tag rer",
