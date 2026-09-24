@@ -159,12 +159,43 @@ st.markdown(
         .vc-cell-caption {align-items:flex-start;flex-direction:column;padding:.4rem .55rem;}
         .vc-state-ribbon {grid-template-columns:repeat(2,minmax(0,1fr));}
     }
+    /* 原创 16-bit 虚拟细胞实验室主题：保留专业图表的清晰度。 */
+    :root {--px-ink:#16213d;--px-navy:#22345a;--px-mint:#91e0d4;--px-cyan:#54c7d8;--px-gold:#ffd76a;--px-coral:#fa7e73;}
+    .stApp {background:linear-gradient(180deg,#d8f5ef 0,#f7fff9 46%,#e7efff 100%); color:var(--px-ink);}
+    .block-container {max-width:1500px;padding-top:1rem;}
+    [data-testid="stSidebar"] {background:linear-gradient(180deg,#1e3157,#294a71 58%,#173052); border-right:4px solid #79d5d3;}
+    [data-testid="stSidebar"] * {color:#f6fff8;}
+    [data-testid="stSidebar"] [data-baseweb="select"] * {color:#17243e;}
+    [data-testid="stSidebar"] input {color:#17243e!important;}
+    h1,h2,h3,h4,h5,h6 {letter-spacing:.025em;color:#18294b;}
+    div.stButton > button, div.stDownloadButton > button {
+      border:3px solid #172947!important;border-radius:3px!important;background:#72d8c9!important;color:#10233d!important;
+      box-shadow:4px 4px 0 #172947!important;font-family:ui-monospace,"Cascadia Mono","Microsoft YaHei",monospace!important;
+      text-transform:none; image-rendering:pixelated;
+    }
+    div.stButton > button:hover,div.stDownloadButton > button:hover {background:#ffe07a!important;transform:translate(2px,2px)!important;box-shadow:2px 2px 0 #172947!important;}
+    .vc-metric-card {border:3px solid #22345a;border-left:7px solid var(--accent,#54c7d8);border-radius:3px;background:#fafff9;box-shadow:4px 4px 0 rgba(34,52,90,.75);}
+    .vc-metric-label {font-family:ui-monospace,"Cascadia Mono","Microsoft YaHei",monospace;color:#355071;font-weight:700;}
+    .vc-metric-value {color:#18294b;font-family:ui-monospace,"Cascadia Mono","Microsoft YaHei",monospace;}
+    .px-lab-room {position:relative;overflow:hidden;min-height:220px;border:4px solid #18294b;border-radius:4px;background-color:#245273;background-position:center;background-size:cover;box-shadow:7px 7px 0 #18294b;margin:.2rem 0 1rem;}
+    .px-lab-room::after {content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(14,31,58,.86),rgba(14,31,58,.2) 70%,rgba(14,31,58,.46));}
+    .px-lab-content {position:relative;z-index:1;padding:1.15rem;color:#fff;max-width:660px;text-shadow:2px 2px 0 #16213d;font-family:ui-monospace,"Cascadia Mono","Microsoft YaHei",monospace;}
+    .px-lab-title {display:inline-block;padding:.3rem .55rem;background:#fa7e73;border:3px solid #fff;box-shadow:3px 3px 0 #16213d;font-weight:800;font-size:1.05rem;}
+    .px-lab-content h2 {color:#fff;margin:.7rem 0 .25rem;font-size:clamp(1.3rem,3vw,2rem);}
+    .px-hud {display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.75rem;}
+    .px-hud span {padding:.32rem .55rem;background:rgba(11,31,57,.86);border:2px solid #91e0d4;color:#fff;font-size:.8rem;}
+    .px-room-switch {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem;margin:.55rem 0 1rem;}
+    .px-room {padding:.75rem;border:3px solid #25395c;background:#fff;box-shadow:4px 4px 0 #25395c;font-family:ui-monospace,"Cascadia Mono","Microsoft YaHei",monospace;}
+    .px-room.active {background:#fff3ae;border-color:#f1786f;}
+    .vc-dish {border-radius:12px!important;border:5px solid #22345a!important;box-shadow:5px 5px 0 #22345a!important;}
+    [data-testid="stExpander"] {border:3px solid #a7bfd2;border-radius:3px;background:rgba(255,255,255,.84);}
+    @media (max-width:560px) {.px-lab-room{min-height:250px}.px-lab-content{padding:.8rem}.px-room-switch{grid-template-columns:1fr}.px-hud span{font-size:.72rem;}}
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-APP_STATE_VERSION = "1.0-alpha.8"
+APP_STATE_VERSION = "1.0-alpha.9"
 RUNTIME_STATE_PATH = Path(__file__).with_name(".runtime_state.json")
 MAX_HISTORY_POINTS = 2000
 
@@ -677,6 +708,7 @@ def sidebar() -> None:
         key="app_mode",
         help="两个模式共享同一培养环境和模拟时钟。",
     )
+    st.sidebar.toggle("减少动态效果", key="reduce_motion", help="关闭气泡、能量脉冲等非必要动画。")
     keys = list(CELL_PROFILES)
     labels = {key: CELL_PROFILES[key].display_name for key in keys}
     profile_key = st.sidebar.selectbox(
@@ -1453,6 +1485,42 @@ def _atlas_data_uri() -> str:
     return f"data:image/png;base64,{encoded}"
 
 
+@st.cache_data(show_spinner=False)
+def _pixel_lab_data_uri() -> str:
+    """把原创像素实验室背景嵌入页面，确保离线和移动端可显示。"""
+
+    asset_path = Path(__file__).with_name("assets") / "pixel-lab-original-v1.png"
+    encoded = base64.b64encode(asset_path.read_bytes()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
+
+
+def pixel_lab_scene(cell) -> None:
+    """渲染两个模式共享的像素实验室工作台与 HUD。"""
+
+    intracellular_mode = st.session_state.get("app_mode") == "细胞生命活动"
+    room_name = "细胞生命活动室" if intracellular_mode else "细胞培养室"
+    room_icon = "🧬" if intracellular_mode else "🧫"
+    live_value = (
+        f"ATP {st.session_state.intracellular.atp_percent:.0f}% · ROS {st.session_state.intracellular.ros_percent:.0f}%"
+        if intracellular_mode else f"存活率 {cell.viability_percent:.0f}% · 汇合度 {cell.confluence_percent:.0f}%"
+    )
+    st.markdown(
+        f'''<section class="px-lab-room" style="background-image:url('{_pixel_lab_data_uri()}')">
+          <div class="px-lab-content"><span class="px-lab-title">E-CELL // PIXEL LAB</span>
+          <h2>{room_icon} {room_name}</h2><p>探索工作台已就绪：现有模拟、事件、图表和导出功能保持不变。</p>
+          <div class="px-hud"><span>时间 {format_simulation_time(cell.time_h)}</span><span>{html.escape(live_value)}</span><span>{html.escape(cell.profile.display_name)}</span></div>
+          </div></section>''',
+        unsafe_allow_html=True,
+    )
+    cultivation_class = "active" if not intracellular_mode else ""
+    life_class = "active" if intracellular_mode else ""
+    st.markdown(
+        f'''<div class="px-room-switch"><div class="px-room {cultivation_class}">🧫 细胞培养室<br><small>培养皿、补料、环境与动力学 HUD</small></div>
+        <div class="px-room {life_class}">🧬 生命活动室<br><small>细胞地图、细胞器、应激与周期探索</small></div></div>''',
+        unsafe_allow_html=True,
+    )
+
+
 def intracellular_map(state: IntracellularState) -> None:
     """在 3D 生物医学细胞剖面图上叠加实时状态与细胞器标签。"""
 
@@ -2024,9 +2092,13 @@ initialize_state()
 sidebar()
 cell = st.session_state.cell
 
+if st.session_state.get("reduce_motion"):
+    st.markdown("<style>*,*::before,*::after{animation:none!important;transition:none!important;}</style>", unsafe_allow_html=True)
+
 st.title("e-cell")
-st.caption("细胞培养与细胞生命活动模拟器 · V1.0-alpha.8 · 双模式、共享环境与时间")
+st.caption("细胞培养与细胞生命活动模拟器 · V1.0-alpha.9 · 像素实验室双场景")
 st.error("研究原型：可用于假设探索和实验设计辅助；尚未经过实验验证，不能替代湿实验。")
+pixel_lab_scene(cell)
 
 pending_toast = st.session_state.pop("pending_toast", None)
 if pending_toast:
