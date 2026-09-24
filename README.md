@@ -1,6 +1,6 @@
 # e-cell
 
-e-cell V1.0-alpha.6 是一个**文献驱动、使用真实单位、可用实验数据校准**的虚拟细胞研究原型。界面包含“细胞培养”和“细胞生命活动”两个模式；它适合探索实验假设，但在完成参数拟合与独立验证前，不能替代湿实验或作为定量实验结论。
+e-cell V1.0-alpha.7 是一个**文献驱动、使用真实单位、可用实验数据校准**的虚拟细胞研究原型。界面包含“细胞培养”和“细胞生命活动”两个模式；它适合探索实验假设，但在完成参数拟合与独立验证前，不能替代湿实验或作为定量实验结论。
 
 ## 两种模拟模式
 
@@ -59,6 +59,13 @@ e-cell V1.0-alpha.6 是一个**文献驱动、使用真实单位、可用实验�
 - 药物 IC50 与 Hill 系数
 - 生长、死亡、营养消耗、乳酸生成、氧传递、接触抑制和换液
 - 带单位的 CSV 数据导出
+- 实测 CSV 导入、列名自动识别、模拟—实测曲线叠加、逐指标 MAE/RMSE 和对齐结果导出
+
+### 实测数据对比
+
+在“细胞培养”模式的“导入实测数据并与模拟对比”中上传 CSV。时间列支持 `time_h`、`time`、`hour` 或 `时间`；可选指标支持活细胞数、存活率、葡萄糖、乳酸、pH 与氧。系统只会在当前浏览器会话中读取文件，不会将实测 CSV 写入项目目录或运行时状态。
+
+图中圆点为模拟历史，叉号为实测数据；系统将模拟历史线性插值到实测时间点，输出“模拟值 − 实测值”的逐点残差、MAE、RMSE 和可下载的对齐 CSV。该功能用于检查模型偏差，**不会自动修改任何参数**。
 
 ## 数学结构
 
@@ -75,7 +82,7 @@ e-cell V1.0-alpha.6 是一个**文献驱动、使用真实单位、可用实验�
 需要 Python 3.10 或更高版本：
 
 ```powershell
-cd "C:\Users\umaso\Documents\Codex\e-cell\virtual_cell_v1.0-alpha"
+cd "C:\Users\umaso\Documents\Codex\e-cell"
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\streamlit.exe run app.py
@@ -104,6 +111,7 @@ e-cell/
 ├── cell.py                # 生长、死亡、代谢和药物动力学
 ├── intracellular.py       # 细胞器功能、应激、周期和命运状态
 ├── evidence.py            # 机制证据等级、来源与适用边界
+├── experiment_data.py     # 实测 CSV 标准化、对齐与残差计算
 ├── profiles.py            # 细胞系参数、来源和置信状态
 ├── simulation.py          # 场景、运行控制和状态判定
 ├── requirements.txt       # 依赖
@@ -112,7 +120,8 @@ e-cell/
 └── tests/
     ├── test_cell.py       # 培养模型测试
     ├── test_intracellular.py # 细胞内部模型测试
-    └── test_app.py        # 界面状态测试
+    ├── test_app.py        # 界面状态测试
+    └── test_experiment_data.py # 实测数据导入与对比测试
 ```
 
 ## 理论基础与证据等级

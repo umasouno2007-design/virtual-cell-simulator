@@ -14,6 +14,13 @@ from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from intracellular import IntracellularState, intracellular_status
 from evidence import REFERENCES, evidence_rows
+from experiment_data import (
+    FIELD_LABELS,
+    comparison_frame,
+    observed_fields,
+    residual_summary,
+    standardize_measurements,
+)
 from profiles import CELL_PROFILES
 from simulation import PRESETS, cell_status, new_simulation
 
@@ -148,7 +155,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-APP_STATE_VERSION = "1.0-alpha.6"
+APP_STATE_VERSION = "1.0-alpha.7"
 RUNTIME_STATE_PATH = Path(__file__).with_name(".runtime_state.json")
 MAX_HISTORY_POINTS = 2000
 
@@ -786,7 +793,7 @@ def dish_quick_actions(cell) -> None:
     )
 
 
-def plot_history(history) -> None:
+def plot_history(history, measurements: pd.DataFrame | None = None) -> None:
     """绘制细胞数量、代谢物和环境条件曲线。"""
 
     data = pd.DataFrame(history)
@@ -808,6 +815,21 @@ def plot_history(history) -> None:
     axes[1, 0].legend()
     axes[1, 1].plot(data["time_h"], data["pH"], label="pH", marker="o", markersize=3)
     axes[1, 1].plot(data["time_h"], data["oxygen_percent"], label="Oxygen %", marker="o", markersize=3)
+    if measurements is not None:
+        overlays = (
+            (axes[0, 0], "viable_cells"),
+            (axes[0, 1], "glucose_mM"),
+            (axes[0, 1], "lactate_mM"),
+            (axes[1, 0], "viability_percent"),
+            (axes[1, 1], "pH"),
+            (axes[1, 1], "oxygen_percent"),
+        )
+        for axis, field in overlays:
+            if field in measurements:
+                axis.scatter(
+                    measurements["time_h"], measurements[field], marker="x", s=45,
+                    linewidths=1.8, label=f"Observed {FIELD_LABELS[field]}",
+                )
     axes[1, 1].legend()
     for ax in axes.flat:
         ax.set_xlabel("Time (h)")
@@ -815,6 +837,45 @@ def plot_history(history) -> None:
     fig.tight_layout()
     st.pyplot(fig)
     plt.close(fig)
+
+
+def measurement_data_panel(history) -> pd.DataFrame | None:
+    """导入不持久化的实测 CSV，并输出叠加和残差需要的数据。"""
+
+    with st.expander("导入实测数据并与模拟对比", expanded=False):
+        st.caption(
+            "支持 UTF-8/GB18030 CSV。至少包含时间列（time_h、time、hour 或“时间”）；"
+            "可选：活细胞数、存活率、葡萄糖、乳酸、pH、氧。上传的数据只保留在当前浏览器会话。"
+        )
+        uploaded = st.file_uploader("选择实测 CSV", type=["csv"], key="measurement_csv")
+        if uploaded is None:
+            return None
+        try:
+            measurements, notes = standardize_measurements(uploaded.getvalue())
+        except (ValueError, pd.errors.ParserError) as error:
+            st.error(f"无法读取实测数据：{error}")
+            return None
+        for note in notes:
+            st.caption(note)
+        if not list(observed_fields(measurements)):
+            st.warning("没有可与模型比较的指标，请检查 CSV 列名。")
+            return None
+        st.dataframe(measurements, hide_index=True, width="stretch")
+        comparison = comparison_frame(pd.DataFrame(history), measurements)
+        st.markdown("**模拟—实测残差（模拟值 − 实测值）**")
+        st.dataframe(
+            residual_summary(comparison).style.format({"MAE": "{:.4g}", "RMSE": "{:.4g}"}),
+            hide_index=True,
+            width="stretch",
+        )
+        st.download_button(
+            "下载对齐后的模拟—实测对比 CSV",
+            data=comparison.to_csv(index=False).encode("utf-8-sig"),
+            file_name="simulation_measurement_comparison.csv",
+            mime="text/csv",
+            key="download_measurement_comparison",
+        )
+        return measurements
 
 
 def references(cell) -> None:
@@ -1230,7 +1291,7 @@ sidebar()
 cell = st.session_state.cell
 
 st.title("e-cell")
-st.caption("细胞培养与细胞生命活动模拟器 · V1.0-alpha.6 · 双模式、共享环境与时间")
+st.caption("细胞培养与细胞生命活动模拟器 · V1.0-alpha.7 · 双模式、共享环境与时间")
 st.error("研究原型：可用于假设探索和实验设计辅助；尚未经过实验验证，不能替代湿实验。")
 
 pending_toast = st.session_state.pop("pending_toast", None)
@@ -1243,7 +1304,8 @@ if st.session_state.app_mode == "细胞培养":
     live_status_panel()
     controls(cell)
     st.subheader("培养动力学曲线")
-    plot_history(st.session_state.history)
+    measurements = measurement_data_panel(st.session_state.history)
+    plot_history(st.session_state.history, measurements)
     data = pd.DataFrame(st.session_state.history)
     st.subheader("实验数据与导出")
     export_name = f"{cell.profile_key}_culture_{cell.time_h:.1f}h.csv"
