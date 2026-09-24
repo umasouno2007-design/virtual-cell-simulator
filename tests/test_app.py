@@ -71,6 +71,7 @@ class AppStateTestCase(unittest.TestCase):
         glucose_button.click().run(timeout=30)
 
         self.assertAlmostEqual(app.session_state["cell"].glucose_mm, before + 1.0)
+        self.assertEqual(app.session_state["events"][-1]["event"], "补充葡萄糖")
         self.assertTrue(
             any("vc-html-sugar" in item.value for item in app.get("html"))
         )

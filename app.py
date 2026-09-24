@@ -4,6 +4,7 @@ import html
 import json
 import time
 from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -227,6 +228,7 @@ def save_runtime_state() -> None:
         "app_mode": st.session_state.get("app_mode", "细胞培养"),
         "intracellular": asdict(st.session_state.get("intracellular", IntracellularState())),
         "intracellular_history": st.session_state.get("intracellular_history", [])[-MAX_HISTORY_POINTS:],
+        "events": st.session_state.get("events", [])[-500:],
     }
     # Streamlit 的定时 fragment 和按钮回调可能并发保存。同名临时文件会被
     # 另一个执行流先移动，从而在 Cloud 上触发 FileNotFoundError。
@@ -289,6 +291,7 @@ def load_runtime_state() -> bool:
             else [st.session_state.intracellular.snapshot()]
         )
         st.session_state.app_mode = payload.get("app_mode", "细胞培养")
+        st.session_state.events = payload.get("events", [])
         return True
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return False
@@ -301,6 +304,22 @@ def trigger_effect(effect: str, duration_s: float = 6.0) -> None:
     st.session_state.effect_until = time.time() + duration_s
     st.session_state.effect_cycles_remaining = max(1, round(duration_s))
     st.session_state.effect_nonce = st.session_state.get("effect_nonce", 0) + 1
+
+
+def record_event(event: str, details: str = "") -> None:
+    """记录可导出的实验操作；不保存原始上传文件。"""
+
+    cell = st.session_state.get("cell")
+    if cell is None:
+        return
+    st.session_state.setdefault("events", []).append({
+        "time_h": round(cell.time_h, 6),
+        "simulation_time": format_simulation_time(cell.time_h),
+        "recorded_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "event": event,
+        "details": details,
+    })
+    st.session_state.events = st.session_state.events[-500:]
 
 
 def advance_realtime(now: float | None = None) -> float:
@@ -416,6 +435,9 @@ def initialize_state() -> None:
         st.session_state.intracellular_history = [
             st.session_state.intracellular.snapshot()
         ]
+    if "events" not in st.session_state:
+        st.session_state.events = []
+        record_event("创建实验", "恢复或创建当前模拟的起始状态")
     # 连续模拟可能运行数天；界面只保留最近采样点，防止曲线和状态文件无限增长。
     st.session_state.history = st.session_state.history[-MAX_HISTORY_POINTS:]
     st.session_state.intracellular_history = (
@@ -440,6 +462,8 @@ def reset_simulation(profile_key: str, preset_name: str, volume: float, area: fl
     st.session_state.intracellular_history = [
         st.session_state.intracellular.snapshot()
     ]
+    st.session_state.events = []
+    record_event("创建实验", f"细胞系={profile_key}；场景={preset_name}；体积={volume:g} mL；面积={area:g} cm²")
     st.session_state.last_wall_time = time.time()
     st.session_state.run_message = "已创建新实验"
     st.session_state.pending_toast = ("实验已重置，新场景参数已生效", "🔄")
@@ -450,6 +474,7 @@ def update_environment(attribute: str, widget_key: str) -> None:
     """在页面主体渲染前把环境控件的新值同步到当前培养物。"""
 
     setattr(st.session_state.cell, attribute, st.session_state[widget_key])
+    record_event("环境调整", f"{attribute}={st.session_state[widget_key]}")
     if attribute == "oxygen_setpoint_percent":
         trigger_effect("oxygen")
     save_runtime_state()
@@ -547,6 +572,7 @@ def controls(cell) -> None:
         st.session_state.last_wall_time = time.time()
         st.session_state.run_message = f"连续培养中 · {TIME_MULTIPLIERS[st.session_state.time_multiplier]}"
         st.session_state.pending_toast = ("连续培养已开始；离开页面后仍按真实时间补算", "▶️")
+        record_event("开始连续培养", TIME_MULTIPLIERS[st.session_state.time_multiplier])
         save_runtime_state()
         st.rerun()
     if pause_col.button(
@@ -556,6 +582,7 @@ def controls(cell) -> None:
         st.session_state.running = False
         st.session_state.run_message = "连续培养已暂停"
         st.session_state.pending_toast = ("培养时钟已暂停", "⏸️")
+        record_event("暂停培养")
         save_runtime_state()
         st.rerun()
 
@@ -589,6 +616,7 @@ def controls(cell) -> None:
         st.session_state.pending_toast = (
             f"模拟推进 {completed * dt_h:g} 小时，图表和指标已更新", "▶️"
         )
+        record_event("单步推进", f"{completed} 步 × {dt_h:g} h")
         st.session_state.last_wall_time = time.time()
         save_runtime_state()
         st.rerun()
@@ -598,6 +626,7 @@ def controls(cell) -> None:
         st.session_state.history.append(cell.snapshot())
         st.session_state.run_message = "已全量换液"
         st.session_state.pending_toast = ("换液完成，营养与环境指标已刷新", "✅")
+        record_event("全量换液")
         save_runtime_state()
         st.rerun()
 
@@ -646,6 +675,7 @@ def controls(cell) -> None:
             st.session_state.pending_toast = (
                 f"药物浓度已设为 {dose:g} µM，下一步模拟时生效", "💊"
             )
+            record_event("设置药物", f"{dose:g} µM")
             save_runtime_state()
             st.rerun()
 
@@ -771,6 +801,7 @@ def dish_quick_actions(cell) -> None:
         trigger_effect("glucose")
         st.session_state.run_message = f"已补充葡萄糖 {glucose_addition:g} mM"
         st.toast(f"已向培养皿投入 {glucose_addition:g} mM 葡萄糖", icon="🍬")
+        record_event("补充葡萄糖", f"{glucose_addition:g} mM")
         save_runtime_state()
 
     if oxygen_button.button("🫧 补充溶氧", width="stretch"):
@@ -781,6 +812,7 @@ def dish_quick_actions(cell) -> None:
         trigger_effect("oxygen")
         st.session_state.run_message = f"已补充溶氧 {oxygen_addition:g} 个百分点"
         st.toast(f"溶氧已提高 {oxygen_addition:g} 个百分点", icon="🫧")
+        record_event("补充溶氧", f"{oxygen_addition:g} 个百分点")
         save_runtime_state()
 
     sugar_input, oxygen_input = st.columns(2)
@@ -899,10 +931,30 @@ def measurement_data_panel(cell, history) -> pd.DataFrame | None:
             if st.button("应用建议到后续模拟", key="apply_coarse_calibration"):
                 cell.parameters.growth_scale = result.growth_scale
                 cell.parameters.uptake_scale = result.uptake_scale
+                record_event("应用粗校准", f"growth_scale={result.growth_scale:.1f}；uptake_scale={result.uptake_scale:.1f}")
                 st.session_state.pending_toast = ("粗校准建议已应用；已有历史不会被改写。", "🧪")
                 save_runtime_state()
                 st.rerun()
         return measurements
+
+
+def event_timeline_panel() -> None:
+    """显示并导出当前实验的可追溯操作时间线。"""
+
+    with st.expander("实验事件时间线", expanded=False):
+        st.caption("记录的是模拟时间与本机记录时间；导出可与实测 CSV、仪器日志和实验记录本对应。")
+        events = pd.DataFrame(st.session_state.get("events", []))
+        if events.empty:
+            st.info("尚无实验事件。")
+            return
+        st.dataframe(events.iloc[::-1], hide_index=True, width="stretch")
+        st.download_button(
+            "下载实验事件 CSV",
+            data=events.to_csv(index=False).encode("utf-8-sig"),
+            file_name="experiment_events.csv",
+            mime="text/csv",
+            key="download_experiment_events",
+        )
 
 
 def references(cell) -> None:
@@ -1359,6 +1411,8 @@ st.download_button(
 )
 with st.expander("查看原始数据"):
     st.dataframe(data, hide_index=True, width="stretch")
+
+event_timeline_panel()
 
 references(cell)
 
