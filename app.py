@@ -24,6 +24,7 @@ from experiment_data import (
     residual_summary,
     standardize_measurements,
 )
+from experiment_manifest import build_manifest
 from observability import OBSERVABLES, observability_rows
 from profiles import CELL_PROFILES
 from simulation import PRESETS, cell_status, new_simulation
@@ -945,18 +946,38 @@ def event_timeline_panel() -> None:
 
     with st.expander("实验事件时间线", expanded=False):
         st.caption("记录的是模拟时间与本机记录时间；导出可与实测 CSV、仪器日志和实验记录本对应。")
-        events = pd.DataFrame(st.session_state.get("events", []))
+        cell = st.session_state.cell
+        event_records = st.session_state.get("events", [])
+        manifest = build_manifest(
+            cell,
+            app_version=APP_STATE_VERSION,
+            preset_name=st.session_state.get("preset_name", "标准培养"),
+            app_mode=st.session_state.get("app_mode", "细胞培养"),
+            time_multiplier=st.session_state.get("time_multiplier", 60),
+            history=st.session_state.get("history", []),
+            events=event_records,
+        )
+        st.download_button(
+            "下载实验配置快照 JSON",
+            data=json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8"),
+            file_name=f"{cell.profile_key}_experiment_manifest_{cell.time_h:.1f}h.json",
+            mime="application/json",
+            key="download_experiment_manifest",
+        )
+        st.caption("快照仅保存设置、参数和事件摘要，不含上传的实测文件或完整原始历史。")
+
+        events = pd.DataFrame(event_records)
         if events.empty:
             st.info("尚无实验事件。")
-            return
-        st.dataframe(events.iloc[::-1], hide_index=True, width="stretch")
-        st.download_button(
-            "下载实验事件 CSV",
-            data=events.to_csv(index=False).encode("utf-8-sig"),
-            file_name="experiment_events.csv",
-            mime="text/csv",
-            key="download_experiment_events",
-        )
+        else:
+            st.dataframe(events.iloc[::-1], hide_index=True, width="stretch")
+            st.download_button(
+                "下载实验事件 CSV",
+                data=events.to_csv(index=False).encode("utf-8-sig"),
+                file_name="experiment_events.csv",
+                mime="text/csv",
+                key="download_experiment_events",
+            )
 
 
 def references(cell) -> None:
