@@ -14,6 +14,7 @@ from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from intracellular import IntracellularState, intracellular_status
 from evidence import REFERENCES, evidence_rows
+from calibration import fit_growth_and_uptake
 from experiment_data import (
     FIELD_LABELS,
     comparison_frame,
@@ -839,7 +840,7 @@ def plot_history(history, measurements: pd.DataFrame | None = None) -> None:
     plt.close(fig)
 
 
-def measurement_data_panel(history) -> pd.DataFrame | None:
+def measurement_data_panel(cell, history) -> pd.DataFrame | None:
     """导入不持久化的实测 CSV，并输出叠加和残差需要的数据。"""
 
     with st.expander("导入实测数据并与模拟对比", expanded=False):
@@ -875,6 +876,32 @@ def measurement_data_panel(history) -> pd.DataFrame | None:
             mime="text/csv",
             key="download_measurement_comparison",
         )
+        st.divider()
+        st.markdown("**两参数粗校准（可选）**")
+        st.caption(
+            "在 growth_scale=0.1–2.0、uptake_scale=0.1–3.0 的网格中搜索，"
+            "以活细胞数、葡萄糖、乳酸的相对残差最小为目标。要求上传实验的起点"
+            "与当前模拟历史首点代表同一培养条件；不拟合死亡、氧传递、药物或 pH 参数。"
+        )
+        if st.button("计算两参数粗校准", key="run_coarse_calibration"):
+            try:
+                with st.spinner("正在搜索透明的两参数网格…"):
+                    st.session_state.coarse_calibration = fit_growth_and_uptake(cell, history, measurements)
+            except ValueError as error:
+                st.error(f"无法完成粗校准：{error}")
+        result = st.session_state.get("coarse_calibration")
+        if result is not None:
+            st.info(
+                f"建议值：生长速率缩放 = {result.growth_scale:.1f}；"
+                f"代谢摄取缩放 = {result.uptake_scale:.1f}；"
+                f"归一化 RMSE = {result.normalized_rmse:.4f}。"
+            )
+            if st.button("应用建议到后续模拟", key="apply_coarse_calibration"):
+                cell.parameters.growth_scale = result.growth_scale
+                cell.parameters.uptake_scale = result.uptake_scale
+                st.session_state.pending_toast = ("粗校准建议已应用；已有历史不会被改写。", "🧪")
+                save_runtime_state()
+                st.rerun()
         return measurements
 
 
@@ -1304,7 +1331,7 @@ if st.session_state.app_mode == "细胞培养":
     live_status_panel()
     controls(cell)
     st.subheader("培养动力学曲线")
-    measurements = measurement_data_panel(st.session_state.history)
+    measurements = measurement_data_panel(cell, st.session_state.history)
     plot_history(st.session_state.history, measurements)
     data = pd.DataFrame(st.session_state.history)
     st.subheader("实验数据与导出")
