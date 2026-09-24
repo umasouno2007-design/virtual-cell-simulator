@@ -23,6 +23,7 @@ from experiment_data import (
     residual_summary,
     standardize_measurements,
 )
+from observability import OBSERVABLES, observability_rows
 from profiles import CELL_PROFILES
 from simulation import PRESETS, cell_status, new_simulation
 
@@ -1006,6 +1007,21 @@ def intracellular_metrics(state: IntracellularState) -> None:
     st.markdown(f'<div class="vc-metric-grid">{cards}</div>', unsafe_allow_html=True)
 
 
+def observability_panel() -> None:
+    """说明模型功能指数应如何用实验读出验证。"""
+
+    with st.expander("模型指标的实验验证建议", expanded=False):
+        st.caption(
+            "以下是验证趋势的建议检测组合，不是诊断建议，也不代表任一模型百分比可直接换算为仪器读数。"
+        )
+        data = pd.DataFrame(observability_rows())
+        data["依据"] = [
+            "；".join(REFERENCES[key].title for key in item.evidence_keys)
+            for item in OBSERVABLES
+        ]
+        st.dataframe(data, hide_index=True, width="stretch")
+
+
 def _intracellular_svg_fallback(state: IntracellularState) -> None:
     """图片资源缺失时使用的离线矢量备用视图。"""
 
@@ -1396,6 +1412,7 @@ else:
         unsafe_allow_html=True,
     )
     intracellular_live_panel()
+    observability_panel()
     controls(cell)
     st.subheader("细胞内部状态曲线")
     plot_intracellular_history(st.session_state.intracellular_history)
