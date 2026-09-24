@@ -164,6 +164,13 @@ APP_STATE_VERSION = "1.0-alpha.8"
 RUNTIME_STATE_PATH = Path(__file__).with_name(".runtime_state.json")
 MAX_HISTORY_POINTS = 2000
 
+SCHEDULED_ACTIONS = {
+    "补充葡萄糖": {"unit": "mM", "minimum": 0.1, "maximum": 20.0, "default": 1.0},
+    "补充溶氧": {"unit": "百分点", "minimum": 0.5, "maximum": 10.0, "default": 1.0},
+    "部分换液": {"unit": "%", "minimum": 10.0, "maximum": 100.0, "default": 100.0},
+    "设置药物": {"unit": "µM", "minimum": 0.0, "maximum": 10000.0, "default": 1.0},
+}
+
 TIME_MULTIPLIERS = {
     1: "1× 实时（1 秒 = 1 秒）",
     60: "60×（1 秒 = 1 分钟）",
@@ -232,6 +239,7 @@ def save_runtime_state() -> None:
         "intracellular": asdict(st.session_state.get("intracellular", IntracellularState())),
         "intracellular_history": st.session_state.get("intracellular_history", [])[-MAX_HISTORY_POINTS:],
         "events": st.session_state.get("events", [])[-500:],
+        "scheduled_actions": st.session_state.get("scheduled_actions", [])[-100:],
     }
     # Streamlit 的定时 fragment 和按钮回调可能并发保存。同名临时文件会被
     # 另一个执行流先移动，从而在 Cloud 上触发 FileNotFoundError。
@@ -295,6 +303,10 @@ def load_runtime_state() -> bool:
         )
         st.session_state.app_mode = payload.get("app_mode", "细胞培养")
         st.session_state.events = payload.get("events", [])
+        scheduled_actions = payload.get("scheduled_actions", [])
+        st.session_state.scheduled_actions = (
+            scheduled_actions if isinstance(scheduled_actions, list) else []
+        )
         return True
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return False
@@ -325,6 +337,94 @@ def record_event(event: str, details: str = "") -> None:
     st.session_state.events = st.session_state.events[-500:]
 
 
+def execute_due_scheduled_actions() -> bool:
+    """执行当前模拟时间已到的计划操作，并保留可追溯执行记录。"""
+
+    cell = st.session_state.cell
+    applied = False
+    for action in sorted(
+        st.session_state.get("scheduled_actions", []),
+        key=lambda item: float(item.get("at_time_h", 0.0)),
+    ):
+        if action.get("status") != "pending" or float(action.get("at_time_h", 0.0)) > cell.time_h + 1e-9:
+            continue
+        action_type = action.get("action")
+        value = float(action.get("value", 0.0))
+        if action_type == "补充葡萄糖":
+            cell.add_glucose(value)
+            trigger_effect("glucose")
+        elif action_type == "补充溶氧":
+            cell.oxygen_percent = min(21.0, cell.oxygen_percent + value)
+            trigger_effect("oxygen")
+        elif action_type == "部分换液":
+            cell.exchange_medium(value / 100.0)
+        elif action_type == "设置药物":
+            cell.add_drug(value)
+        else:
+            # 旧版或手工编辑的状态文件不应阻断连续模拟。
+            action["status"] = "skipped"
+            action["executed_at_h"] = round(cell.time_h, 6)
+            continue
+        action["status"] = "executed"
+        action["executed_at_h"] = round(cell.time_h, 6)
+        record_event(
+            f"计划执行：{action_type}",
+            f"计划时间={float(action['at_time_h']):g} h；{value:g} {SCHEDULED_ACTIONS[action_type]['unit']}",
+        )
+        applied = True
+    if applied:
+        st.session_state.history.append(cell.snapshot())
+        st.session_state.intracellular_history.append(
+            st.session_state.intracellular.snapshot()
+        )
+    return applied
+
+
+def next_scheduled_action_time() -> float | None:
+    """返回当前时间之后最早的待执行计划时间。"""
+
+    current_time = st.session_state.cell.time_h
+    times = [
+        float(action["at_time_h"])
+        for action in st.session_state.get("scheduled_actions", [])
+        if action.get("status") == "pending"
+        and float(action.get("at_time_h", 0.0)) > current_time + 1e-9
+    ]
+    return min(times) if times else None
+
+
+def advance_simulation_hours(simulated_hours: float) -> float:
+    """推进模型；遇到计划操作时精确停在计划时间点执行。"""
+
+    cell = st.session_state.cell
+    remaining = max(0.0, simulated_hours)
+    if remaining <= 0 or not cell.alive:
+        return 0.0
+    step_h = min(6.0, max(1.0 / 3600.0, remaining / 500.0))
+    original_remaining = remaining
+    iterations = 0
+    execute_due_scheduled_actions()
+    while remaining > 1e-9 and cell.alive and iterations < 20000:
+        next_action = next_scheduled_action_time()
+        until_action = (
+            next_action - cell.time_h if next_action is not None else remaining
+        )
+        actual_step = min(step_h, remaining, max(0.0, until_action))
+        if actual_step <= 1e-9:
+            execute_due_scheduled_actions()
+            continue
+        cell.step(actual_step)
+        st.session_state.intracellular.step(cell, actual_step)
+        st.session_state.history.append(cell.snapshot())
+        st.session_state.intracellular_history.append(
+            st.session_state.intracellular.snapshot()
+        )
+        remaining -= actual_step
+        iterations += 1
+        execute_due_scheduled_actions()
+    return original_remaining - remaining
+
+
 def advance_realtime(now: float | None = None) -> float:
     """按墙上时钟推进连续培养，并返回本次推进的模拟小时数。"""
 
@@ -344,25 +444,12 @@ def advance_realtime(now: float | None = None) -> float:
     if simulated_hours <= 0:
         return 0.0
 
-    # 最多约 500 个历史点；长时间离开页面时使用不超过模型上限 6 h 的步长补算。
-    step_h = min(6.0, max(1.0 / 3600.0, simulated_hours / 500.0))
-    remaining = simulated_hours
-    iterations = 0
-    while remaining > 1e-9 and cell.alive and iterations < 20000:
-        actual_step = min(step_h, remaining)
-        cell.step(actual_step)
-        st.session_state.intracellular.step(cell, actual_step)
-        st.session_state.history.append(cell.snapshot())
-        st.session_state.intracellular_history.append(
-            st.session_state.intracellular.snapshot()
-        )
-        remaining -= actual_step
-        iterations += 1
+    completed = advance_simulation_hours(simulated_hours)
     if not cell.alive:
         st.session_state.running = False
         st.session_state.run_message = "连续培养已停止：培养物失活"
     save_runtime_state()
-    return simulated_hours - max(0.0, remaining)
+    return completed
 
 
 def format_simulation_time(hours: float) -> str:
@@ -441,6 +528,8 @@ def initialize_state() -> None:
     if "events" not in st.session_state:
         st.session_state.events = []
         record_event("创建实验", "恢复或创建当前模拟的起始状态")
+    if "scheduled_actions" not in st.session_state:
+        st.session_state.scheduled_actions = []
     # 连续模拟可能运行数天；界面只保留最近采样点，防止曲线和状态文件无限增长。
     st.session_state.history = st.session_state.history[-MAX_HISTORY_POINTS:]
     st.session_state.intracellular_history = (
@@ -466,6 +555,7 @@ def reset_simulation(profile_key: str, preset_name: str, volume: float, area: fl
         st.session_state.intracellular.snapshot()
     ]
     st.session_state.events = []
+    st.session_state.scheduled_actions = []
     record_event("创建实验", f"细胞系={profile_key}；场景={preset_name}；体积={volume:g} mL；面积={area:g} cm²")
     st.session_state.last_wall_time = time.time()
     st.session_state.run_message = "已创建新实验"
@@ -604,22 +694,13 @@ def controls(cell) -> None:
     steps = col2.selectbox("运行步数", [1, 6, 12, 24, 48, 72], index=0)
     if col3.button("单步推进", width="stretch", disabled=not cell.alive):
         advance_realtime()
-        completed = 0
-        for _ in range(steps):
-            if not cell.alive:
-                break
-            cell.step(dt_h)
-            st.session_state.intracellular.step(cell, dt_h)
-            st.session_state.history.append(cell.snapshot())
-            st.session_state.intracellular_history.append(
-                st.session_state.intracellular.snapshot()
-            )
-            completed += 1
-        st.session_state.run_message = f"已运行 {completed} 步，共 {completed * dt_h:g} h"
+        completed_h = advance_simulation_hours(steps * dt_h)
+        completed = round(completed_h / dt_h) if dt_h else 0
+        st.session_state.run_message = f"已运行约 {completed} 步，共 {completed_h:g} h"
         st.session_state.pending_toast = (
-            f"模拟推进 {completed * dt_h:g} 小时，图表和指标已更新", "▶️"
+            f"模拟推进 {completed_h:g} 小时，图表和指标已更新", "▶️"
         )
-        record_event("单步推进", f"{completed} 步 × {dt_h:g} h")
+        record_event("单步推进", f"请求 {steps} 步 × {dt_h:g} h；实际 {completed_h:g} h")
         st.session_state.last_wall_time = time.time()
         save_runtime_state()
         st.rerun()
@@ -681,6 +762,54 @@ def controls(cell) -> None:
             record_event("设置药物", f"{dose:g} µM")
             save_runtime_state()
             st.rerun()
+
+
+def scheduled_actions_panel() -> None:
+    """设置将在指定模拟时间执行的补料、换液或加药操作。"""
+
+    cell = st.session_state.cell
+    with st.expander("计划操作（实验方案）", expanded=False):
+        st.caption("计划按模拟时间触发；连续培养补算或单步推进跨过该时间点时会自动执行。")
+        action_type = st.selectbox("计划操作类型", list(SCHEDULED_ACTIONS), key="scheduled_action_type")
+        specification = SCHEDULED_ACTIONS[action_type]
+        time_col, value_col, add_col = st.columns([1, 1, 0.8])
+        at_time_h = time_col.number_input(
+            "执行时间（h）", min_value=float(cell.time_h), value=float(cell.time_h + 1.0), step=0.5,
+            key="scheduled_action_time_h",
+        )
+        value = value_col.number_input(
+            f"操作量（{specification['unit']}）", min_value=specification["minimum"],
+            max_value=specification["maximum"], value=specification["default"], step=0.5,
+            key="scheduled_action_value",
+        )
+        if add_col.button("加入计划", width="stretch"):
+            st.session_state.scheduled_actions.append({
+                "at_time_h": round(float(at_time_h), 6),
+                "action": action_type,
+                "value": float(value),
+                "status": "pending",
+            })
+            st.session_state.scheduled_actions.sort(key=lambda item: item["at_time_h"])
+            record_event("添加计划操作", f"{at_time_h:g} h：{action_type} {value:g} {specification['unit']}")
+            st.session_state.pending_toast = ("计划操作已加入时间线", "📋")
+            save_runtime_state()
+            st.rerun()
+
+        scheduled = st.session_state.get("scheduled_actions", [])
+        if scheduled:
+            table = pd.DataFrame(scheduled).rename(columns={
+                "at_time_h": "计划时间（h）", "action": "操作", "value": "操作量", "status": "状态",
+                "executed_at_h": "实际执行时间（h）",
+            })
+            st.dataframe(table, hide_index=True, width="stretch")
+            if st.button("清除已执行计划", key="clear_executed_actions"):
+                st.session_state.scheduled_actions = [
+                    item for item in scheduled if item.get("status") == "pending"
+                ]
+                save_runtime_state()
+                st.rerun()
+        else:
+            st.info("暂无计划操作。")
 
 def metrics(cell) -> None:
     """显示实验常用的状态指标。"""
@@ -953,9 +1082,10 @@ def event_timeline_panel() -> None:
             app_version=APP_STATE_VERSION,
             preset_name=st.session_state.get("preset_name", "标准培养"),
             app_mode=st.session_state.get("app_mode", "细胞培养"),
-            time_multiplier=st.session_state.get("time_multiplier", 60),
-            history=st.session_state.get("history", []),
-            events=event_records,
+        time_multiplier=st.session_state.get("time_multiplier", 60),
+        history=st.session_state.get("history", []),
+        events=event_records,
+        scheduled_actions=st.session_state.get("scheduled_actions", []),
         )
         st.download_button(
             "下载实验配置快照 JSON",
@@ -1435,6 +1565,7 @@ if st.session_state.app_mode == "细胞培养":
     show_profile(cell)
     live_status_panel()
     controls(cell)
+    scheduled_actions_panel()
     st.subheader("培养动力学曲线")
     measurements = measurement_data_panel(cell, st.session_state.history)
     plot_history(st.session_state.history, measurements)
@@ -1451,6 +1582,7 @@ else:
     intracellular_live_panel()
     observability_panel()
     controls(cell)
+    scheduled_actions_panel()
     st.subheader("细胞内部状态曲线")
     plot_intracellular_history(st.session_state.intracellular_history)
     data = pd.DataFrame(st.session_state.intracellular_history)

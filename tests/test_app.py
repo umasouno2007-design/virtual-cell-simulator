@@ -77,6 +77,27 @@ class AppStateTestCase(unittest.TestCase):
         )
         self.assertEqual(len(app.exception), 0)
 
+    def test_scheduled_action_executes_when_simulation_reaches_its_time(self) -> None:
+        app_path = Path(__file__).resolve().parents[1] / "app.py"
+        app = AppTest.from_file(app_path).run(timeout=30)
+        start_time = app.session_state["cell"].time_h
+        app.session_state["scheduled_actions"] = [{
+            "at_time_h": start_time + 0.5,
+            "action": "补充葡萄糖",
+            "value": 1.0,
+            "status": "pending",
+        }]
+        duration = next(item for item in app.selectbox if item.label == "每步时长（h）")
+        duration.set_value(1.0).run(timeout=30)
+        advance_button = next(item for item in app.button if item.label == "单步推进")
+        advance_button.click().run(timeout=30)
+
+        action = app.session_state["scheduled_actions"][0]
+        self.assertEqual(action["status"], "executed")
+        self.assertAlmostEqual(action["executed_at_h"], start_time + 0.5, places=5)
+        self.assertEqual(app.session_state["events"][-2]["event"], "计划执行：补充葡萄糖")
+        self.assertEqual(len(app.exception), 0)
+
     def test_intracellular_mode_renders_organelles_and_metrics(self) -> None:
         app_path = Path(__file__).resolve().parents[1] / "app.py"
         app = AppTest.from_file(app_path).run(timeout=30)

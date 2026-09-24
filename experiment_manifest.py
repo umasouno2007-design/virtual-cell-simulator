@@ -15,6 +15,7 @@ def build_manifest(
     time_multiplier: int,
     history: list[dict],
     events: list[dict],
+    scheduled_actions: list[dict] | None = None,
 ) -> dict:
     """返回 JSON 可序列化的配置，而非完整运行状态或上传原始数据。"""
 
@@ -50,5 +51,6 @@ def build_manifest(
             "last_time_h": history[-1].get("time_h") if history else None,
         },
         "events": events,
+        "scheduled_actions": scheduled_actions or [],
         "limitations": "这是配置快照，不是经过实验验证的模型参数，也不包含原始实测文件。",
     }
