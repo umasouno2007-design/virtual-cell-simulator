@@ -1,10 +1,20 @@
 """单位明确、可校准的细胞培养动力学模型。"""
 
 from dataclasses import dataclass
-from math import exp, log
+from math import exp, isfinite, log
 from typing import Dict
 
 from profiles import CellProfile, get_profile
+
+
+def _finite_nonnegative(value: float, fallback: float = 0.0) -> float:
+    """将外部数值限制为有限非负数，防止状态快照出现 NaN/无穷大。"""
+
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    return number if isfinite(number) and number >= 0.0 else fallback
 
 
 @dataclass
@@ -42,11 +52,12 @@ class CellCulture:
     ) -> None:
         self.profile: CellProfile = get_profile(profile_key)
         self.profile_key = self.profile.key
-        self.culture_volume_ml = max(0.1, culture_volume_ml)
-        self.surface_area_cm2 = max(0.1, surface_area_cm2)
-        self.viable_cells = viable_cells or (
+        self.culture_volume_ml = max(0.1, _finite_nonnegative(culture_volume_ml, 0.1))
+        self.surface_area_cm2 = max(0.1, _finite_nonnegative(surface_area_cm2, 0.1))
+        default_viable = (
             self.profile.seeding_density_cell_cm2 * self.surface_area_cm2
         )
+        self.viable_cells = default_viable if viable_cells is None else _finite_nonnegative(viable_cells)
         self.dead_cells = 0.0
         self.time_h = 0.0
         self.glucose_mm = self.profile.initial_glucose_mm
@@ -72,7 +83,7 @@ class CellCulture:
     def viability_percent(self) -> float:
         if self.total_cells <= 0:
             return 0.0
-        return 100.0 * self.viable_cells / self.total_cells
+        return min(100.0, max(0.0, 100.0 * self.viable_cells / self.total_cells))
 
     @property
     def carrying_capacity(self) -> float:
@@ -95,18 +106,21 @@ class CellCulture:
         """
 
         p = self.parameters
-        glucose = self.glucose_mm / (p.glucose_half_saturation_mm + self.glucose_mm)
-        glutamine = self.glutamine_mm / (
-            p.glutamine_half_saturation_mm + self.glutamine_mm
-        )
-        oxygen = self.oxygen_percent / (
-            p.oxygen_half_saturation_percent + self.oxygen_percent
-        )
+        glucose_mm = _finite_nonnegative(self.glucose_mm)
+        glutamine_mm = _finite_nonnegative(self.glutamine_mm)
+        oxygen_percent = _finite_nonnegative(self.oxygen_percent)
+        glucose_half = max(1e-9, _finite_nonnegative(p.glucose_half_saturation_mm, 1e-9))
+        glutamine_half = max(1e-9, _finite_nonnegative(p.glutamine_half_saturation_mm, 1e-9))
+        oxygen_half = max(1e-9, _finite_nonnegative(p.oxygen_half_saturation_percent, 1e-9))
+        lactate_inhibition = max(1e-9, _finite_nonnegative(p.lactate_inhibition_mm, 1e-9))
+        glucose = glucose_mm / (glucose_half + glucose_mm)
+        glutamine = glutamine_mm / (glutamine_half + glutamine_mm)
+        oxygen = oxygen_percent / (oxygen_half + oxygen_percent)
         ph = exp(-((self.ph - 7.35) / 0.38) ** 2)
         temperature = exp(-((self.temperature_c - 37.0) / 2.0) ** 2)
         osmolality = exp(-((self.osmolality_mosm_kg - 300.0) / 55.0) ** 2)
         lactate = 1.0 / (
-            1.0 + (self.lactate_mm / p.lactate_inhibition_mm) ** 2
+            1.0 + (_finite_nonnegative(self.lactate_mm) / lactate_inhibition) ** 2
         )
         drug = 1.0 / (
             1.0 + (self.drug_um / max(0.001, p.drug_ic50_um)) ** p.drug_hill
@@ -127,9 +141,15 @@ class CellCulture:
     def step(self, dt_h: float = 1.0) -> None:
         """用经验动力学方程推进培养状态。实验预测前必须重新拟合参数。"""
 
+        dt_h = _finite_nonnegative(dt_h)
         if not self.alive or dt_h <= 0:
             return
-        dt_h = min(float(dt_h), 6.0)
+        dt_h = min(dt_h, 6.0)
+        # 状态可来自 CSV/恢复文件；推进前统一裁剪，避免单个无效值污染后续历史。
+        for name in ("viable_cells", "dead_cells", "glucose_mm", "glutamine_mm", "lactate_mm", "oxygen_percent", "drug_um"):
+            setattr(self, name, _finite_nonnegative(getattr(self, name)))
+        self.oxygen_percent = min(21.0, self.oxygen_percent)
+        self.ph = min(8.0, max(6.2, _finite_nonnegative(self.ph, 7.4)))
         p = self.parameters
         modifiers = self.growth_modifiers()
         mu_max = log(2.0) / self.profile.doubling_time_h

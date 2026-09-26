@@ -49,6 +49,7 @@ streamlit run app.py
 3. 在“细胞培养”模式导入实测 CSV，查看模拟—实测叠加、逐点残差、MAE 与 RMSE。
 4. 仅在起点和条件一致时运行两参数粗校准；建议值只影响后续模拟，历史不会被改写。
 5. 在“实验元数据与质量控制”中记录来源、传代数、STR、支原体、培养基/血清批次；这些信息不参与模型计算，也不等于样本合格。
+6. 在“参数敏感性与不确定性分析”中查看未校准生长/摄取先验的单因素情景差异，并下载逐时 CSV；情景范围不是置信区间。
 
 ### 教学与机制探索模块
 
@@ -73,6 +74,12 @@ python scripts/validate_a549_teaching_case.py
 ![A549 教学合成数据的训练与留出验证](assets/validation/a549_teaching_case/a549_training_holdout.png)
 
 真实数据列格式、单位、来源要求和隐私边界见 [data/README.md](data/README.md)。
+
+## 参数敏感性与不确定性
+
+培养模式中的“参数敏感性与不确定性分析”从**当前培养状态**出发，逐项扫描群体倍增时间、生长速率缩放和代谢摄取缩放的低/基准/高情景，比较未来 12–168 h 的活细胞数、存活率、葡萄糖、乳酸与 pH，并提供 CSV 和趋势图。倍增时间仅有细胞库中心值，±20% 是教学情景；两个缩放参数是待校准先验。基础死亡率、氧传递、缓冲容量、乳酸生成率和承载密度没有可通用外推的范围，因而被列为待实验测定，未被伪造为“置信区间”。
+
+所有敏感性结果只回答“在所列假设情景下，输出会如何变化”，不代表参数后验分布、置信区间或实验验证。
 
 ## 科学边界与证据等级
 
@@ -107,6 +114,8 @@ data/                    教学示例数据与数据治理说明
 scripts/                 可重复运行的验证案例
 tests/                   模型、数据、界面状态与案例测试
 assets/                  本地视觉资源、截图与验证图
+sensitivity.py           单因素先验情景敏感性分析
+reproduction/            教学性论文复现可行性审查（当前不伪造数据）
 ```
 
 ## 部署、引用与许可证
@@ -114,6 +123,8 @@ assets/                  本地视觉资源、截图与验证图
 - 部署步骤见 [DEPLOYMENT.md](DEPLOYMENT.md)。请勿将私密实验、患者资料、令牌或 `.streamlit/secrets.toml` 推送到公开仓库。
 - 引用本项目请使用 [CITATION.cff](CITATION.cff)。其中作者姓名保留了可编辑占位符，发布前请替换为偏好的署名；未声明 DOI、论文发表或外部验证。
 - 本项目使用 [MIT License](LICENSE)。第三方来源、证据与限制须随再分发保留。
+- 真实协作数据建议使用 [EXPERIMENT_PROTOCOL_TEMPLATE.md](EXPERIMENT_PROTOCOL_TEMPLATE.md) 记录；真实验证数据必须有可追溯来源，并预先留出独立验证集。
+- 风险覆盖、未覆盖风险与测试方式见 [QUALITY.md](QUALITY.md)；教学性论文复现审查见 [REPRODUCTION_PLAN.md](REPRODUCTION_PLAN.md)；GitHub 展示文案见 [PROJECT_PITCH.md](PROJECT_PITCH.md)。
 
 ## 中文简历表述（可直接使用）
 

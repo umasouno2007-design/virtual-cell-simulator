@@ -83,6 +83,33 @@ class CellCultureTestCase(unittest.TestCase):
         self.assertEqual(len(history), 13)
         self.assertAlmostEqual(cell.time_h, 6.0)
 
+    def test_invalid_initial_values_and_state_do_not_create_nonfinite_snapshot(self) -> None:
+        cell = CellCulture("hela", culture_volume_ml=-1, surface_area_cm2=float("nan"), viable_cells=-5)
+        self.assertEqual(cell.viable_cells, 0.0)
+        self.assertGreaterEqual(cell.culture_volume_ml, 0.1)
+        self.assertGreaterEqual(cell.surface_area_cm2, 0.1)
+        cell.viable_cells = 1000
+        cell.glucose_mm = float("nan")
+        cell.lactate_mm = -3
+        cell.oxygen_percent = float("inf")
+        cell.step(1.0)
+        snapshot = cell.snapshot()
+        self.assertGreaterEqual(snapshot["glucose_mM"], 0)
+        self.assertGreaterEqual(snapshot["lactate_mM"], 0)
+        self.assertLessEqual(snapshot["oxygen_percent"], 21)
+
+    def test_zero_saturation_parameters_do_not_divide_by_zero(self) -> None:
+        cell = CellCulture("hela")
+        cell.parameters.glucose_half_saturation_mm = 0
+        cell.parameters.glutamine_half_saturation_mm = 0
+        cell.parameters.oxygen_half_saturation_percent = 0
+        cell.parameters.lactate_inhibition_mm = 0
+        cell.glucose_mm = 0
+        cell.glutamine_mm = 0
+        cell.oxygen_percent = 0
+        modifiers = cell.growth_modifiers()
+        self.assertTrue(all(0 <= value <= 1 for value in modifiers.values()))
+
 
 if __name__ == "__main__":
     unittest.main()

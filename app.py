@@ -30,6 +30,7 @@ from intracellular_forecast import FORECAST_INPUTS, forecast_intracellular_state
 from cell_cycle_navigation import next_cycle_checkpoint
 from observability import OBSERVABLES, observability_rows
 from virtual_assays import ASSAYS, simulate_virtual_assay
+from sensitivity import PENDING_MEASUREMENT_PARAMETERS, SENSITIVITY_PARAMETERS, run_sensitivity
 from profiles import CELL_PROFILES
 from simulation import PRESETS, cell_status, new_simulation
 
@@ -1255,6 +1256,47 @@ def measurement_data_panel(cell, history) -> pd.DataFrame | None:
         return measurements
 
 
+def sensitivity_analysis_panel(cell) -> None:
+    """以当前培养状态运行单因素情景扫描；只读模型状态，不执行隐式校准。"""
+
+    with st.expander("参数敏感性与不确定性分析", expanded=False):
+        st.caption(
+            "每次只改变一个已有先验，比较当前状态未来的相对趋势。范围是情景探索范围，不是置信区间，也不能替代实验验证。"
+        )
+        horizon = st.slider("分析时长（h）", 12, 168, 72, 12, key="sensitivity_horizon")
+        if st.button("运行单因素敏感性分析", key="run_sensitivity_analysis"):
+            history, summary = run_sensitivity(cell, float(horizon))
+            st.session_state.sensitivity_history = history
+            st.session_state.sensitivity_summary = summary
+            st.session_state.pending_toast = ("敏感性分析已完成；结果仅表示先验情景差异。", "📊")
+        for item in SENSITIVITY_PARAMETERS.values():
+            st.markdown(f"- **{item.label}**：{item.source} {item.limitation}")
+        st.info(f"待实验测定：{PENDING_MEASUREMENT_PARAMETERS}")
+        history = st.session_state.get("sensitivity_history")
+        summary = st.session_state.get("sensitivity_summary")
+        if history is None or summary is None:
+            return
+        st.markdown("**终点摘要（当前状态起算）**")
+        st.dataframe(summary, hide_index=True, width="stretch")
+        st.download_button(
+            "下载敏感性分析 CSV", data=history.to_csv(index=False).encode("utf-8-sig"),
+            file_name="one_factor_sensitivity.csv", mime="text/csv", key="download_sensitivity",
+        )
+        figure, axes = plt.subplots(1, 2, figsize=(11, 4))
+        for key, group in history.groupby(["parameter", "scenario"]):
+            label = f"{group['parameter_label'].iloc[0]} · {key[1]}"
+            axes[0].plot(group["time_h"], group["viable_cells"], label=label)
+            axes[1].plot(group["time_h"], group["glucose_mM"], label=label)
+        axes[0].set(title="活细胞数敏感性", xlabel="时间（h）", ylabel="cells")
+        axes[1].set(title="葡萄糖敏感性", xlabel="时间（h）", ylabel="mM")
+        for axis in axes:
+            axis.grid(alpha=0.25)
+            axis.legend(fontsize=7)
+        figure.tight_layout()
+        st.pyplot(figure)
+        plt.close(figure)
+
+
 def event_timeline_panel() -> None:
     """显示并导出当前实验的可追溯操作时间线。"""
 
@@ -2239,6 +2281,7 @@ if st.session_state.app_mode == "细胞培养":
     st.subheader("培养动力学曲线")
     measurements = measurement_data_panel(cell, st.session_state.history)
     plot_history(st.session_state.history, measurements)
+    sensitivity_analysis_panel(cell)
     data = pd.DataFrame(st.session_state.history)
     st.subheader("实验数据与导出")
     export_name = f"{cell.profile_key}_culture_{cell.time_h:.1f}h.csv"
