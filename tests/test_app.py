@@ -29,7 +29,8 @@ class AppStateTestCase(unittest.TestCase):
         app = AppTest.from_file(app_path).run(timeout=30)
 
         self.assertTrue(any("vc-overview" in item.value for item in app.get("html")))
-        app.button[0].click().run(timeout=30)
+        reset_button = next(item for item in app.button if item.label == "创建/重置实验")
+        reset_button.click().run(timeout=30)
         self.assertTrue(any("操作完成" in item.value for item in app.success))
         self.assertEqual(len(app.exception), 0)
 
@@ -75,6 +76,16 @@ class AppStateTestCase(unittest.TestCase):
         self.assertTrue(
             any("vc-html-sugar" in item.value for item in app.get("html"))
         )
+        self.assertEqual(len(app.exception), 0)
+
+    def test_quality_control_panel_is_available_without_changing_model(self) -> None:
+        app_path = Path(__file__).resolve().parents[1] / "app.py"
+        app = AppTest.from_file(app_path).run(timeout=30)
+
+        source = next(item for item in app.text_input if item.label == "细胞来源 / 供应商")
+        source.set_value("ATCC").run(timeout=30)
+
+        self.assertEqual(app.session_state["cell"].profile_key, "hela")
         self.assertEqual(len(app.exception), 0)
 
     def test_scheduled_action_executes_when_simulation_reaches_its_time(self) -> None:

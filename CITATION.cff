@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use e-cell, please cite this software."
+title: "e-cell: Virtual Cell Simulator"
+version: 1.0.0
+date-released: 2026-09-26
+license: MIT
+authors:
+  - alias: "umasouno2007-design"
+    name: "[Please replace with the preferred author name]"
+repository-code: "https://github.com/umasouno2007-design/virtual-cell-simulator"
+abstract: "A literature-driven empirical kinetics research prototype for adherent-cell culture condition exploration."

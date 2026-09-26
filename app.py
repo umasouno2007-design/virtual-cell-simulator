@@ -1,4 +1,4 @@
-"""文献驱动的虚拟细胞培养模拟器 Streamlit 界面。"""
+"""面向贴壁细胞培养条件探索的文献驱动经验动力学原型界面。"""
 
 import html
 import json
@@ -199,6 +199,20 @@ APP_STATE_VERSION = "1.0-alpha.9"
 RUNTIME_STATE_PATH = Path(__file__).with_name(".runtime_state.json")
 MAX_HISTORY_POINTS = 2000
 
+# 这些字段是实验可追溯性元数据，而非模型输入。空值表示尚未记录，绝不代表
+# 已通过质量控制；它们随配置快照导出，便于与真实实验记录交叉核对。
+EXPERIMENT_METADATA_DEFAULTS = {
+    "cell_source": "",
+    "passage_number": "",
+    "cell_bank_lot": "",
+    "str_status": "未记录",
+    "mycoplasma_status": "未记录",
+    "mycoplasma_test_date": "",
+    "medium_lot": "",
+    "serum_lot": "",
+    "operator_notes": "",
+}
+
 SCHEDULED_ACTIONS = {
     "补充葡萄糖": {"unit": "mM", "minimum": 0.1, "maximum": 20.0, "default": 1.0},
     "补充溶氧": {"unit": "百分点", "minimum": 0.5, "maximum": 10.0, "default": 1.0},
@@ -328,6 +342,7 @@ def save_runtime_state() -> None:
         "celldex_discovered": st.session_state.get("celldex_discovered", []),
         "events": st.session_state.get("events", [])[-500:],
         "scheduled_actions": st.session_state.get("scheduled_actions", [])[-100:],
+        "experiment_metadata": st.session_state.get("experiment_metadata", {}),
     }
     # Streamlit 的定时 fragment 和按钮回调可能并发保存。同名临时文件会被
     # 另一个执行流先移动，从而在 Cloud 上触发 FileNotFoundError。
@@ -406,6 +421,11 @@ def load_runtime_state() -> bool:
         st.session_state.intracellular_notes = notes if isinstance(notes, list) else []
         discovered = payload.get("celldex_discovered", [])
         st.session_state.celldex_discovered = discovered if isinstance(discovered, list) else []
+        metadata = payload.get("experiment_metadata", {})
+        st.session_state.experiment_metadata = {
+            **EXPERIMENT_METADATA_DEFAULTS,
+            **(metadata if isinstance(metadata, dict) else {}),
+        }
         return True
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return False
@@ -645,6 +665,8 @@ def initialize_state() -> None:
         record_event("创建实验", "恢复或创建当前模拟的起始状态")
     if "scheduled_actions" not in st.session_state:
         st.session_state.scheduled_actions = []
+    if "experiment_metadata" not in st.session_state:
+        st.session_state.experiment_metadata = EXPERIMENT_METADATA_DEFAULTS.copy()
     # 连续模拟可能运行数天；界面只保留最近采样点，防止曲线和状态文件无限增长。
     st.session_state.history = st.session_state.history[-MAX_HISTORY_POINTS:]
     st.session_state.intracellular_history = (
@@ -677,6 +699,7 @@ def reset_simulation(profile_key: str, preset_name: str, volume: float, area: fl
     st.session_state.celldex_discovered = []
     st.session_state.events = []
     st.session_state.scheduled_actions = []
+    st.session_state.experiment_metadata = EXPERIMENT_METADATA_DEFAULTS.copy()
     record_event("创建实验", f"细胞系={profile_key}；场景={preset_name}；体积={volume:g} mL；面积={area:g} cm²")
     st.session_state.last_wall_time = time.time()
     st.session_state.run_message = "已创建新实验"
@@ -763,6 +786,46 @@ def show_profile(cell) -> None:
         )
         st.dataframe(info, hide_index=True, width="stretch")
         st.info(profile.reference_status)
+
+
+def experiment_quality_panel() -> None:
+    """记录实验批次的身份与质量控制元数据，不把它们伪装成模型参数。"""
+
+    with st.expander("实验元数据与质量控制", expanded=False):
+        st.caption(
+            "用于记录本次真实实验的来源与质量控制。未记录不等于通过；这些字段不会改变任何模拟结果。"
+        )
+        metadata = st.session_state.experiment_metadata
+        with st.form("experiment_quality_form"):
+            source, passage, bank_lot = st.columns(3)
+            metadata["cell_source"] = source.text_input("细胞来源 / 供应商", value=metadata["cell_source"])
+            metadata["passage_number"] = passage.text_input("传代数", value=metadata["passage_number"], help="例如 P12；请按实验室记录填写。")
+            metadata["cell_bank_lot"] = bank_lot.text_input("细胞库批次 / 冻存管编号", value=metadata["cell_bank_lot"])
+            str_col, myco_col, date_col = st.columns(3)
+            str_options = ["未记录", "已通过", "待复测", "未通过"]
+            metadata["str_status"] = str_col.selectbox("STR 身份验证", str_options, index=str_options.index(metadata["str_status"]) if metadata["str_status"] in str_options else 0)
+            myco_options = ["未记录", "阴性", "待测", "阳性"]
+            metadata["mycoplasma_status"] = myco_col.selectbox("支原体检测", myco_options, index=myco_options.index(metadata["mycoplasma_status"]) if metadata["mycoplasma_status"] in myco_options else 0)
+            metadata["mycoplasma_test_date"] = date_col.text_input("检测日期", value=metadata["mycoplasma_test_date"], placeholder="YYYY-MM-DD")
+            medium_col, serum_col = st.columns(2)
+            metadata["medium_lot"] = medium_col.text_input("培养基批次", value=metadata["medium_lot"])
+            metadata["serum_lot"] = serum_col.text_input("血清批次", value=metadata["serum_lot"])
+            metadata["operator_notes"] = st.text_area("实验备注", value=metadata["operator_notes"], placeholder="例如接种日期、异常形态或设备日志编号。")
+            submitted = st.form_submit_button("保存元数据", type="primary")
+        if submitted:
+            st.session_state.experiment_metadata = metadata.copy()
+            record_event("更新实验元数据", "记录了细胞来源、质量控制或批次信息")
+            save_runtime_state()
+            st.success("元数据已保存，并将包含在实验配置快照中。")
+        quality_flags = []
+        if metadata["str_status"] != "已通过":
+            quality_flags.append("STR 身份验证未标记为已通过")
+        if metadata["mycoplasma_status"] != "阴性":
+            quality_flags.append("支原体检测未标记为阴性")
+        if quality_flags:
+            st.info("；".join(quality_flags) + "。这不会阻止模拟，但真实实验应先核对质量控制记录。")
+        else:
+            st.success("已记录 STR 通过及支原体阴性；请仍以实验室原始报告为准。")
 
 
 def controls(cell) -> None:
@@ -1208,6 +1271,7 @@ def event_timeline_panel() -> None:
         history=st.session_state.get("history", []),
         events=event_records,
         scheduled_actions=st.session_state.get("scheduled_actions", []),
+        experiment_metadata=st.session_state.get("experiment_metadata", {}),
         )
         st.download_button(
             "下载实验配置快照 JSON",
@@ -2157,8 +2221,8 @@ if st.session_state.get("reduce_motion"):
     st.markdown("<style>*,*::before,*::after{animation:none!important;transition:none!important;}</style>", unsafe_allow_html=True)
 
 st.title("e-cell")
-st.caption("细胞培养与细胞生命活动模拟器 · V1.0-alpha.9 · 像素实验室双场景")
-st.error("研究原型：可用于假设探索和实验设计辅助；尚未经过实验验证，不能替代湿实验。")
+st.caption("贴壁细胞培养条件探索 · 文献驱动经验动力学研究原型 · V1.0-alpha.9")
+st.error("研究原型：支持假设探索和实验设计讨论；尚未完成独立验证，不能替代湿实验、定量检测或临床判断。")
 pixel_lab_scene(cell)
 
 pending_toast = st.session_state.pop("pending_toast", None)
@@ -2168,6 +2232,7 @@ if pending_toast:
 
 if st.session_state.app_mode == "细胞培养":
     show_profile(cell)
+    experiment_quality_panel()
     live_status_panel()
     controls(cell)
     scheduled_actions_panel()

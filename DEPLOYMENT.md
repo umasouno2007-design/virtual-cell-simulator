@@ -1,37 +1,46 @@
-# 部署到网页，在 Pad 上运行
+# 部署 e-cell
 
-本项目已包含 `requirements.txt` 和 `.streamlit/config.toml`，可以部署到 Streamlit Community Cloud。部署完成后，Android Pad、iPad 和电脑都可以通过浏览器访问。
+e-cell 是面向贴壁细胞培养条件探索的 Streamlit 研究原型。部署不会把它变成经验证的实验或临床软件；公开部署前应保留 README 中的科学边界、数据隐私与证据等级说明。
 
-## 第一步：上传到 GitHub
+## 本地运行
 
-1. 注册或登录 GitHub。
-2. 新建一个名为 `e-cell` 的仓库。
-3. 把本项目中的所有文件上传到仓库根目录。
-4. 确认仓库根目录能看到 `app.py` 和 `requirements.txt`。
+要求：Python 3.11 或 3.12。
 
-## 第二步：创建 Streamlit 应用
+```bash
+git clone https://github.com/umasouno2007-design/virtual-cell-simulator.git
+cd virtual-cell-simulator
+python -m venv .venv
+```
 
-1. 在浏览器打开 <https://share.streamlit.io/>。
-2. 使用 GitHub 登录并授权访问刚才的仓库。
-3. 选择对应的仓库和分支。
-4. 主文件路径填写 `app.py`。
-5. 点击 **Deploy**。
+激活环境后：
 
-部署通常需要几分钟。成功后会得到一个以 `streamlit.app` 结尾的网址。
+```bash
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
 
-## 第三步：在 Pad 上使用
+# macOS / Linux
+source .venv/bin/activate
 
-1. 在 Pad 浏览器中打开部署网址。
-2. 可以将网页“添加到主屏幕”，以后像普通应用一样打开。
-3. 每台设备和每个浏览器会话都有独立的模拟状态。
-4. 点击“下载 CSV 数据”可把实验记录保存到 Pad。
+pip install -r requirements.txt
+streamlit run app.py
+```
 
-## 后续更新
+在浏览器打开终端显示的地址，通常是 <http://localhost:8501>。如 8501 已被占用，请使用 Streamlit 输出的替代端口。
 
-修改代码并推送到同一个 GitHub 仓库后，Streamlit Community Cloud 会重新部署。若部署失败，先检查日志中指出的文件名和依赖错误。
+## Streamlit Community Cloud
 
-## 注意
+1. 将仓库推送到 GitHub，且确保根目录包含 `app.py`、`requirements.txt` 与 `assets/`。
+2. 在 <https://share.streamlit.io/> 使用 GitHub 账户创建应用。
+3. 选择此仓库和要部署的分支，入口文件填写 `app.py`，然后部署。
+4. 在生成的应用日志中确认依赖安装和启动成功，再把实际 URL 更新到 README 顶部的 Demo 链接位置。
 
-- 不要把密码、令牌或其他隐私信息写进代码仓库。
-- 本项目不需要数据库，也不需要设置密钥。
-- 模拟数据保存在浏览器会话中；刷新、休眠或服务重启后可能重置，请及时下载 CSV。
+## 部署前检查
+
+```bash
+python -m unittest discover -s tests -p "test_*.py"
+python scripts/validate_a549_teaching_case.py
+```
+
+- 不要提交 `.streamlit/secrets.toml`、令牌、密码、患者资料、可识别供体资料、未公开实验数据或内部仪器日志。
+- `data/a549_teaching_synthetic.csv` 是公开可分发的教学合成数据；不能替换为真实实验数据后仍沿用其“教学合成”表述。
+- Streamlit Cloud 的本地文件存储是临时的；配置快照、CSV 和事件记录应及时下载保存，不应被当作 GLP/GMP 审计系统。
