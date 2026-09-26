@@ -31,6 +31,9 @@ from cell_cycle_navigation import next_cycle_checkpoint
 from observability import OBSERVABLES, observability_rows
 from virtual_assays import ASSAYS, simulate_virtual_assay
 from sensitivity import PENDING_MEASUREMENT_PARAMETERS, SENSITIVITY_PARAMETERS, run_sensitivity
+from data_quality import quality_report
+from scenario import export_scenario, import_scenario
+from version import MODEL_VERSION
 from profiles import CELL_PROFILES
 from simulation import PRESETS, cell_status, new_simulation
 
@@ -40,7 +43,14 @@ st.set_page_config(page_title="e-cell", page_icon="🧫", layout="wide")
 st.markdown(
     """
     <style>
-    .block-container {max-width: 1440px; padding-top: 1.4rem;}
+    .block-container {max-width: 1440px; padding-top: 1.25rem;}
+    :root {--ec-navy:#203446;--ec-line:#cbd6df;--ec-muted:#587080;--ec-teal:#1f8a8a;--ec-paper:#f7f9fb;}
+    [data-testid="stAppViewContainer"] {background: var(--ec-paper);}
+    h1,h2,h3 {color:var(--ec-navy); letter-spacing:.01em;}
+    [data-testid="stSidebar"] {border-right:1px solid var(--ec-line); background:#eef3f7;}
+    .stButton > button,.stDownloadButton > button {border:1px solid #496477;border-radius:3px;background:#fff;color:#203446;box-shadow:1px 1px 0 #aebdca;font-weight:600;}
+    .stButton > button:hover,.stDownloadButton > button:hover {border-color:var(--ec-teal);color:#126b6b;background:#f4fbfb;}
+    [data-testid="stExpander"] {border:1px solid var(--ec-line);border-radius:4px;background:#fff;}
     .vc-metric-grid {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -52,9 +62,9 @@ st.markdown(
         padding: .8rem .9rem;
         border: 1px solid #dfe9e3;
         border-left: 4px solid var(--accent, #4d9f78);
-        border-radius: .75rem;
-        background: linear-gradient(145deg, #ffffff, #f6faf7);
-        box-shadow: 0 2px 9px rgba(33, 53, 42, .06);
+        border-radius: 3px;
+        background: #ffffff;
+        box-shadow: none;
     }
     .vc-metric-label {
         color: #597065; font-size: .78rem; line-height: 1.2;
@@ -69,8 +79,8 @@ st.markdown(
         gap: 1rem; align-items: stretch; margin: .35rem 0 1.1rem;
     }
     .vc-panel {
-        border: 1px solid #dfe9e3; border-radius: .9rem; padding: 1rem;
-        background: #fbfdfb;
+        border: 1px solid var(--ec-line); border-radius: 4px; padding: 1rem;
+        background: #ffffff;
     }
     .vc-dish-wrap {display:flex; align-items:center; justify-content:center; gap:.8rem; overflow:hidden;}
     .vc-dish-stage {display:flex; flex-direction:column; align-items:center; gap:.45rem; width:100%;}
@@ -196,6 +206,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# 运行时状态格式与科学模型版本分开：前者可因持久化结构变化而调整，后者用于结果可追溯。
+# 保持此值可兼容已有本机运行状态；科学输出统一使用 MODEL_VERSION。
 APP_STATE_VERSION = "1.0-alpha.9"
 RUNTIME_STATE_PATH = Path(__file__).with_name(".runtime_state.json")
 MAX_HISTORY_POINTS = 2000
@@ -1208,6 +1220,32 @@ def measurement_data_panel(cell, history) -> pd.DataFrame | None:
             return None
         for note in notes:
             st.caption(note)
+        report = quality_report(measurements)
+        if report["blocked"]:
+            st.error("数据质量检查：阻止继续用于模型对齐/校准。请先修正下列问题。")
+        elif report["warnings"]:
+            st.warning("数据质量检查：可继续查看，但存在会限制解释的警告。")
+        else:
+            st.success("数据质量检查：满足最低格式与建模条件。")
+        with st.expander("查看数据质量检查报告", expanded=bool(report["blocked"])):
+            for level, label in (("blocked", "阻止继续"), ("warnings", "可继续但需警告"), ("passed", "通过")):
+                items = report[level]
+                if items:
+                    st.markdown(f"**{label}**")
+                    for issue, suggestion in items:
+                        st.markdown(f"- {issue}：{suggestion}")
+            st.caption(report["disclaimer"])
+            st.download_button(
+                "下载数据质量报告 JSON", data=json.dumps(report, ensure_ascii=False, indent=2).encode("utf-8"),
+                file_name=f"{cell.profile_key}_data_quality_{MODEL_VERSION}.json", mime="application/json", key="download_quality_report",
+            )
+            st.download_button(
+                "下载标准化副本 CSV", data=measurements.to_csv(index=False).encode("utf-8-sig"),
+                file_name=f"{cell.profile_key}_standardized_measurements.csv", mime="text/csv", key="download_standardized_measurements",
+            )
+            st.caption("这是供模型比较的标准化副本；不会修改或覆盖你上传的原始 CSV。")
+        if report["blocked"]:
+            return None
         if not list(observed_fields(measurements)):
             st.warning("没有可与模型比较的指标，请检查 CSV 列名。")
             return None
@@ -1233,10 +1271,17 @@ def measurement_data_panel(cell, history) -> pd.DataFrame | None:
             "以活细胞数、葡萄糖、乳酸的相对残差最小为目标。要求上传实验的起点"
             "与当前模拟历史首点代表同一培养条件；不拟合死亡、氧传递、药物或 pH 参数。"
         )
+        st.caption("指标权重表达你希望各观测指标在透明误差目标中的相对重要性；它们不是统计置信度。")
+        weight_columns = st.columns(3)
+        calibration_weights = {
+            "viable_cells": weight_columns[0].number_input("活细胞数权重", 0.0, 10.0, 1.0, 0.1, key="calibration_weight_cells"),
+            "glucose_mM": weight_columns[1].number_input("葡萄糖权重", 0.0, 10.0, 1.0, 0.1, key="calibration_weight_glucose"),
+            "lactate_mM": weight_columns[2].number_input("乳酸权重", 0.0, 10.0, 1.0, 0.1, key="calibration_weight_lactate"),
+        }
         if st.button("计算两参数粗校准", key="run_coarse_calibration"):
             try:
                 with st.spinner("正在搜索透明的两参数网格…"):
-                    st.session_state.coarse_calibration = fit_growth_and_uptake(cell, history, measurements)
+                    st.session_state.coarse_calibration = fit_growth_and_uptake(cell, history, measurements, calibration_weights)
             except ValueError as error:
                 st.error(f"无法完成粗校准：{error}")
         result = st.session_state.get("coarse_calibration")
@@ -1246,6 +1291,38 @@ def measurement_data_panel(cell, history) -> pd.DataFrame | None:
                 f"代谢摄取缩放 = {result.uptake_scale:.1f}；"
                 f"归一化 RMSE = {result.normalized_rmse:.4f}。"
             )
+            grid = pd.DataFrame(result.grid_scores or [])
+            if not grid.empty:
+                surface = grid.pivot(index="uptake_scale", columns="growth_scale", values="normalized_rmse")
+                figure, axis = plt.subplots(figsize=(8.2, 4.3))
+                image = axis.imshow(surface.to_numpy(), origin="lower", aspect="auto", cmap="viridis")
+                axis.set_xticks(range(len(surface.columns))[::2], [f"{v:.1f}" for v in surface.columns[::2]])
+                axis.set_yticks(range(len(surface.index))[::3], [f"{v:.1f}" for v in surface.index[::3]])
+                axis.set(xlabel="growth_scale", ylabel="uptake_scale", title="透明网格：归一化 RMSE（越低越好）")
+                axis.scatter([list(surface.columns).index(result.growth_scale)], [list(surface.index).index(result.uptake_scale)], marker="x", s=80, color="white", label="最佳解")
+                axis.legend(loc="upper right", fontsize=8)
+                figure.colorbar(image, ax=axis, label="normalized RMSE")
+                figure.tight_layout()
+                st.pyplot(figure)
+                plt.close(figure)
+                near = grid[grid["normalized_rmse"] <= result.normalized_rmse * 1.05]
+                warnings = []
+                if result.growth_scale in (0.1, 2.0) or result.uptake_scale in (0.1, 3.0):
+                    warnings.append("最佳点位于搜索边界；不能据此解释为可靠校准。")
+                if len(measurements) < 5:
+                    warnings.append("实测时间点不足以形成稳健留出集；当前仅报告拟合误差。")
+                if len(near) > 12:
+                    warnings.append("接近最佳区域较宽；参数可辨识性有限。")
+                for warning in warnings:
+                    st.warning(warning)
+                calibration_report = {
+                    "model_version": MODEL_VERSION, "data_points": int(len(measurements)),
+                    "fitted_columns": [field for field in calibration_weights if field in measurements],
+                    "weights": calibration_weights, "search_range": {"growth_scale": [0.1, 2.0], "uptake_scale": [0.1, 3.0]},
+                    "best": {"growth_scale": result.growth_scale, "uptake_scale": result.uptake_scale, "normalized_rmse": result.normalized_rmse},
+                    "warning": warnings or ["这是训练数据拟合误差，尚未构成独立验证。"],
+                }
+                st.download_button("下载粗校准报告 JSON", json.dumps(calibration_report, ensure_ascii=False, indent=2).encode("utf-8"), f"{cell.profile_key}_coarse_calibration_{MODEL_VERSION}.json", "application/json", key="download_calibration_report")
             if st.button("应用建议到后续模拟", key="apply_coarse_calibration"):
                 cell.parameters.growth_scale = result.growth_scale
                 cell.parameters.uptake_scale = result.uptake_scale
@@ -1254,6 +1331,39 @@ def measurement_data_panel(cell, history) -> pd.DataFrame | None:
                 save_runtime_state()
                 st.rerun()
         return measurements
+
+
+def scenario_panel(cell) -> None:
+    """导入或导出最小可复跑的模拟场景；不接收原始实测 CSV。"""
+
+    with st.expander("实验场景：导入、导出与复现", expanded=False):
+        st.caption("场景只保存模拟假设、参数和事件配置；不保存上传 CSV、个人信息或实验原始记录。")
+        payload = export_scenario(
+            cell,
+            duration_h=float(st.session_state.get("scenario_duration_h", 72)),
+            dt_h=float(st.session_state.get("scenario_dt_h", 1)),
+            events=st.session_state.get("scheduled_actions", []),
+            calibration_status="已应用粗校准" if st.session_state.get("coarse_calibration") else "未校准",
+        )
+        st.download_button(
+            "导出当前场景 JSON", data=json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
+            file_name=f"{cell.profile_key}_scenario_{MODEL_VERSION}.json", mime="application/json", key="download_scenario",
+        )
+        uploaded = st.file_uploader("导入场景 JSON", type=["json"], key="scenario_json")
+        if uploaded is not None and st.button("校验并载入场景", key="load_scenario"):
+            try:
+                restored, imported = import_scenario(uploaded.getvalue())
+                st.session_state.cell = restored
+                st.session_state.history = [restored.snapshot()]
+                st.session_state.scheduled_actions = imported.get("events", [])
+                st.session_state.events = []
+                st.session_state.preset_name = "导入场景"
+                st.session_state.pending_toast = ("场景已载入；从导入初始状态重新运行。", "🧪")
+                save_runtime_state()
+                st.rerun()
+            except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                st.error(f"场景未载入：{error}。请使用项目导出的 JSON，并核对字段和单位。")
+        st.caption("场景文件不是 GLP/GMP 审计追踪、实验原始记录或临床文档；格式见 SCENARIO_FORMAT.md。")
 
 
 def sensitivity_analysis_panel(cell) -> None:
@@ -1306,7 +1416,7 @@ def event_timeline_panel() -> None:
         event_records = st.session_state.get("events", [])
         manifest = build_manifest(
             cell,
-            app_version=APP_STATE_VERSION,
+            app_version=MODEL_VERSION,
             preset_name=st.session_state.get("preset_name", "标准培养"),
             app_mode=st.session_state.get("app_mode", "细胞培养"),
         time_multiplier=st.session_state.get("time_multiplier", 60),
@@ -1318,7 +1428,7 @@ def event_timeline_panel() -> None:
         st.download_button(
             "下载实验配置快照 JSON",
             data=json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8"),
-            file_name=f"{cell.profile_key}_experiment_manifest_{cell.time_h:.1f}h.json",
+            file_name=f"{cell.profile_key}_experiment_manifest_{MODEL_VERSION}_{cell.time_h:.1f}h.json",
             mime="application/json",
             key="download_experiment_manifest",
         )
@@ -2263,7 +2373,7 @@ if st.session_state.get("reduce_motion"):
     st.markdown("<style>*,*::before,*::after{animation:none!important;transition:none!important;}</style>", unsafe_allow_html=True)
 
 st.title("e-cell")
-st.caption("贴壁细胞培养条件探索 · 文献驱动经验动力学研究原型 · V1.0-alpha.9")
+st.caption(f"贴壁细胞培养条件探索 · 文献驱动经验动力学研究原型 · 模型版本 {MODEL_VERSION}")
 st.error("研究原型：支持假设探索和实验设计讨论；尚未完成独立验证，不能替代湿实验、定量检测或临床判断。")
 pixel_lab_scene(cell)
 
@@ -2278,13 +2388,14 @@ if st.session_state.app_mode == "细胞培养":
     live_status_panel()
     controls(cell)
     scheduled_actions_panel()
+    scenario_panel(cell)
     st.subheader("培养动力学曲线")
     measurements = measurement_data_panel(cell, st.session_state.history)
     plot_history(st.session_state.history, measurements)
     sensitivity_analysis_panel(cell)
     data = pd.DataFrame(st.session_state.history)
     st.subheader("实验数据与导出")
-    export_name = f"{cell.profile_key}_culture_{cell.time_h:.1f}h.csv"
+    export_name = f"{cell.profile_key}_culture_{MODEL_VERSION}_{cell.time_h:.1f}h.csv"
 else:
     st.markdown(
         '<div class="vc-mode-note"><strong>代表性单细胞视角</strong> · '
@@ -2300,7 +2411,7 @@ else:
     plot_intracellular_history(st.session_state.intracellular_history)
     data = pd.DataFrame(st.session_state.intracellular_history)
     st.subheader("细胞内部数据与导出")
-    export_name = f"{cell.profile_key}_intracellular_{cell.time_h:.1f}h.csv"
+    export_name = f"{cell.profile_key}_intracellular_{MODEL_VERSION}_{cell.time_h:.1f}h.csv"
 
 st.download_button(
     "下载带单位的 CSV",

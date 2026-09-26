@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
 from calibration import fit_growth_and_uptake, replay_from_initial
 from cell import CellCulture
 from experiment_data import comparison_frame, residual_summary
+from version import MODEL_VERSION
 
 
 DEFAULT_DATA = ROOT / "data" / "a549_teaching_synthetic.csv"
@@ -59,6 +60,7 @@ def run_case(data_path: Path = DEFAULT_DATA, output_dir: Path | None = None) -> 
     train_comparison = comparison_frame(prediction, training)
     validation_comparison = comparison_frame(prediction, validation)
     result = {
+        "model_version": MODEL_VERSION,
         "case": "A549 teaching synthetic holdout validation",
         "data_kind": "teaching_synthetic_not_experimental",
         "data_source": str(data_path.relative_to(ROOT)) if data_path.is_relative_to(ROOT) else str(data_path),

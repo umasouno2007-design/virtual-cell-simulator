@@ -1,0 +1,14 @@
+{
+  "schema": "e-cell-scenario/v1",
+  "model_version": "1.0.0",
+  "created_at": "2026-09-26T00:00:00+00:00",
+  "cell": {"profile_key": "a549", "initial_viable_cells": 250000, "culture_volume_ml": 10.0, "surface_area_cm2": 25.0},
+  "environment": {"glucose_mM": 10.0, "glutamine_mM": 2.0, "lactate_mM": 0.0, "oxygen_percent": 18.6, "oxygen_setpoint_percent": 18.6, "pH": 7.4, "temperature_C": 37.0, "CO2_percent": 5.0, "osmolality_mOsm_kg": 300.0, "drug_uM": 0.0},
+  "parameters": {"growth_scale": 1.0, "uptake_scale": 1.0, "death_rate_per_h": 0.001, "glucose_half_saturation_mm": 0.5, "glutamine_half_saturation_mm": 0.12, "oxygen_half_saturation_percent": 3.0, "lactate_inhibition_mm": 20.0, "drug_ic50_um": 10.0, "drug_hill": 1.2, "oxygen_transfer_per_h": 0.35, "buffer_capacity_mm_per_ph": 25.0},
+  "run": {"duration_h": 72, "dt_h": 1},
+  "events": [],
+  "evidence_level": "A/B/C：参数关系证据等级见 MODEL_CARD.md；数值可能待校准。",
+  "calibration_status": "未校准",
+  "data_file_fingerprint": null,
+  "limitations": "场景文件记录模拟假设，不是 GLP/GMP 审计追踪、实验原始记录或临床文档。"
+}

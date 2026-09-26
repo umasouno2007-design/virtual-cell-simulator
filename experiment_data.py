@@ -62,18 +62,24 @@ def standardize_measurements(contents: bytes) -> tuple[pd.DataFrame, list[str]]:
     if "time_h" not in mapped:
         raise ValueError("未找到时间列。请使用 time_h、time、hour 或“时间”。")
     data = pd.DataFrame({target: pd.to_numeric(raw[source], errors="coerce") for target, source in mapped.items()})
-    data = data.dropna(subset=["time_h"]).sort_values("time_h").drop_duplicates("time_h", keep="last")
+    data = data.dropna(subset=["time_h"]).sort_values("time_h")
+    duplicate_time_count = int(data["time_h"].duplicated(keep=False).sum())
+    data = data.drop_duplicates("time_h", keep="last")
     if data.empty:
         raise ValueError("时间列没有可用的数值。")
     numeric_fields = [column for column in data.columns if column != "time_h"]
     data = data.dropna(axis=1, how="all")
     recognized = "、".join(FIELD_LABELS[field] for field in numeric_fields if field in data.columns)
     notes = [f"已识别 {len(data)} 个时间点。"]
+    if duplicate_time_count:
+        notes.append(f"检测到 {duplicate_time_count} 行重复时间；标准化副本保留每个时间的最后一行，原始文件未被修改。")
     notes.append(f"已识别测量指标：{recognized}" if recognized else "只识别到时间列，暂无可比较的测量指标。")
     ignored = [str(column) for column in raw.columns if column not in mapped.values()]
     if ignored:
         notes.append(f"未用于比较的列：{'、'.join(ignored)}。")
-    return data.reset_index(drop=True), notes
+    data = data.reset_index(drop=True)
+    data.attrs["duplicate_time_count"] = duplicate_time_count
+    return data, notes
 
 
 def comparison_frame(simulation: pd.DataFrame, measurements: pd.DataFrame) -> pd.DataFrame:

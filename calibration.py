@@ -25,6 +25,8 @@ class CalibrationResult:
     uptake_scale: float
     normalized_rmse: float
     fitted_history: list[dict]
+    grid_scores: list[dict] | None = None
+    weights: dict[str, float] | None = None
 
 
 def _make_cell(template: CellCulture, initial: dict, growth_scale: float, uptake_scale: float) -> CellCulture:
@@ -51,7 +53,9 @@ def replay_from_initial(template: CellCulture, initial: dict, target_times, grow
     return cell, history
 
 
-def _score(comparison: pd.DataFrame) -> float:
+def _score(comparison: pd.DataFrame, weights: dict[str, float] | None = None) -> float:
+    """计算按观测量纲归一化后的加权 RMSE；权重是可解释偏好而非统计权重。"""
+
     terms = []
     for field in FIT_FIELDS:
         observed = f"{field}_observed"
@@ -62,11 +66,17 @@ def _score(comparison: pd.DataFrame) -> float:
         if len(values) < 2:
             continue
         scale = max(float(values[observed].abs().max()), float(values[observed].max() - values[observed].min()), 1.0)
-        terms.extend((values[residual] / scale).pow(2).tolist())
+        weight = float((weights or {}).get(field, 1.0))
+        if not isfinite(weight) or weight < 0:
+            raise ValueError("校准指标权重必须是有限的非负数。")
+        terms.extend(((values[residual] / scale).pow(2) * weight).tolist())
     return float("inf") if not terms else (sum(terms) / len(terms)) ** 0.5
 
 
-def fit_growth_and_uptake(template: CellCulture, model_history: list[dict], measurements: pd.DataFrame) -> CalibrationResult:
+def fit_growth_and_uptake(
+    template: CellCulture, model_history: list[dict], measurements: pd.DataFrame,
+    weights: dict[str, float] | None = None,
+) -> CalibrationResult:
     """在明确范围内穷举两个缩放系数，不拟合无数据支撑的其他参数。"""
 
     if len(measurements) < 2:
@@ -80,13 +90,15 @@ def fit_growth_and_uptake(template: CellCulture, model_history: list[dict], meas
     growth_candidates = [round(value / 10, 1) for value in range(1, 21)]
     uptake_candidates = [round(value / 10, 1) for value in range(1, 31)]
     best: tuple[float, float, float] | None = None
+    grid_scores: list[dict] = []
     for growth in growth_candidates:
         for uptake in uptake_candidates:
             _, sampled = replay_from_initial(template, initial, measurements["time_h"], growth, uptake)
-            score = _score(comparison_frame(pd.DataFrame(sampled), measurements))
+            score = _score(comparison_frame(pd.DataFrame(sampled), measurements), weights)
+            grid_scores.append({"growth_scale": growth, "uptake_scale": uptake, "normalized_rmse": score})
             if isfinite(score) and (best is None or score < best[0]):
                 best = (score, growth, uptake)
     if best is None:
         raise ValueError("实测时间点超出可重演范围，无法完成粗校准。")
     _, replayed = replay_from_initial(template, initial, [item["time_h"] for item in model_history], best[1], best[2])
-    return CalibrationResult(best[1], best[2], best[0], replayed)
+    return CalibrationResult(best[1], best[2], best[0], replayed, grid_scores, weights or {})

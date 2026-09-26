@@ -16,7 +16,7 @@
 ## 项目解决什么问题
 
 - **适用对象：** 需要讨论贴壁细胞培养条件、采样计划或模型假设的学生、导师和研究人员。
-- **核心能力：** HeLa、HEK-293、A549 的经验培养动力学；葡萄糖/谷氨酰胺/乳酸/氧/pH 等环境趋势；实测 CSV 对齐；MAE、RMSE；`growth_scale` 与 `uptake_scale` 的透明网格粗校准；实验事件、配置快照与质量控制元数据导出。
+- **核心能力：** HeLa、HEK-293、A549 的经验培养动力学；葡萄糖/谷氨酰胺/乳酸/氧/pH 等环境趋势；实测 CSV 对齐；MAE、RMSE；`growth_scale` 与 `uptake_scale` 的透明网格粗校准；实验事件、场景 JSON、配置快照与质量控制元数据导出。
 - **不做什么：** 不估计患者结局、临床疗效或真实细胞器浓度；不替代细胞计数、代谢分析、污染检测、统计推断或独立湿实验验证。
 
 ## 30 秒快速开始
@@ -50,6 +50,7 @@ streamlit run app.py
 4. 仅在起点和条件一致时运行两参数粗校准；建议值只影响后续模拟，历史不会被改写。
 5. 在“实验元数据与质量控制”中记录来源、传代数、STR、支原体、培养基/血清批次；这些信息不参与模型计算，也不等于样本合格。
 6. 在“参数敏感性与不确定性分析”中查看未校准生长/摄取先验的单因素情景差异，并下载逐时 CSV；情景范围不是置信区间。
+7. 在“实验场景：导入、导出与复现”中下载或载入 JSON 场景；它只记录模拟假设，不嵌入原始 CSV，也不构成审计追踪。
 
 ### 教学与机制探索模块
 
@@ -81,6 +82,14 @@ python scripts/validate_a549_teaching_case.py
 
 所有敏感性结果只回答“在所列假设情景下，输出会如何变化”，不代表参数后验分布、置信区间或实验验证。
 
+## 数据质量、校准与场景复现
+
+实测 CSV 导入后会产生最低建模条件报告：时间、重复点、缺失/负值、指标可用性和留出点可行性被区分为“阻止继续”“可继续但需警告”和“通过”。通过只代表格式和最低建模条件合格，**不是实验质量认证，也不证明生物学结论有效**。应用提供标准化副本下载，但不会静默修改或覆盖原始文件。最小数据格式和常见错误见 [data/README.md](data/README.md)。
+
+粗校准保留 `growth_scale` × `uptake_scale` 的透明网格搜索，并显示归一化误差表面、指标权重、最佳点与接近最佳区域。权重仅是可解释的指标优先级；没有留出数据时只能报告拟合误差。搜索边界最优、时间点太少、初始条件不一致或系统残差均意味着不能将结果解释为可靠校准。
+
+场景格式与单位见 [SCENARIO_FORMAT.md](SCENARIO_FORMAT.md)，最小样例见 [data/example_a549_scenario.json](data/example_a549_scenario.json)。在同一模型版本下，导入后从相同初始状态运行应在浮点误差范围内复现；它仍不是 GLP/GMP 审计记录、原始实验记录或临床文件。
+
 ## 科学边界与证据等级
 
 | 机制 | 当前关系 | 证据等级 | 限制 |
@@ -99,9 +108,10 @@ python scripts/validate_a549_teaching_case.py
 
 ```bash
 python -m unittest discover -s tests -p "test_*.py"
+python scripts/smoke_check.py
 ```
 
-GitHub Actions 会在 push 和 pull request 上安装固定范围的依赖并运行同一测试套件。依赖范围见 [requirements.txt](requirements.txt)；本地运行推荐 Python 3.11 或 3.12。
+GitHub Actions 会在 push 和 pull request 上安装固定范围的依赖，并运行测试与部署前 smoke check。依赖范围见 [requirements.txt](requirements.txt)；本地运行推荐 Python 3.11 或 3.12。模型版本、用途、证据边界、已知失败模式和版本升级原则见 [MODEL_CARD.md](MODEL_CARD.md) 与 [CHANGELOG.md](CHANGELOG.md)；界面呈现规则见 [UI_STYLE_GUIDE.md](UI_STYLE_GUIDE.md)。
 
 ## 项目结构
 
@@ -110,6 +120,9 @@ app.py                   Streamlit 界面、导出与交互
 cell.py / simulation.py  贴壁细胞经验动力学与培养操作
 calibration.py           两参数透明网格粗校准
 experiment_data.py       CSV 标准化、对齐、残差、MAE/RMSE
+data_quality.py          最低建模条件检查与可下载报告
+scenario.py              可读 JSON 场景的校验、导入与导出
+version.py               唯一模型版本与场景格式版本
 data/                    教学示例数据与数据治理说明
 scripts/                 可重复运行的验证案例
 tests/                   模型、数据、界面状态与案例测试
