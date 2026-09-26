@@ -142,6 +142,18 @@ class AppStateTestCase(unittest.TestCase):
         self.assertIn("DNA 损伤", metric_grid.value)
         self.assertEqual(len(app.exception), 0)
 
+    def test_core_organelle_click_updates_focus_and_celldex(self) -> None:
+        app_path = Path(__file__).resolve().parents[1] / "app.py"
+        app = AppTest.from_file(app_path).run(timeout=30)
+        mode = next(item for item in app.radio if item.label == "模拟模式")
+        mode.set_value("细胞生命活动").run(timeout=30)
+        mitochondria = next(item for item in app.button if item.label == "⚡ 线粒体")
+        mitochondria.click().run(timeout=30)
+        self.assertEqual(app.session_state["focused_organelle"], "mitochondria")
+        self.assertIn("mitochondria", app.session_state["celldex_discovered"])
+        self.assertEqual(app.session_state["events"][-1]["event"], "探索细胞器")
+        self.assertEqual(len(app.exception), 0)
+
     def test_intracellular_virtual_sample_is_recorded_and_traceable(self) -> None:
         app_path = Path(__file__).resolve().parents[1] / "app.py"
         app = AppTest.from_file(app_path).run(timeout=30)

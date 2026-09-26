@@ -325,6 +325,7 @@ def save_runtime_state() -> None:
         "virtual_assay_rows": st.session_state.get("virtual_assay_rows", [])[-2000:],
         "intracellular_baseline": st.session_state.get("intracellular_baseline"),
         "intracellular_notes": st.session_state.get("intracellular_notes", [])[-500:],
+        "celldex_discovered": st.session_state.get("celldex_discovered", []),
         "events": st.session_state.get("events", [])[-500:],
         "scheduled_actions": st.session_state.get("scheduled_actions", [])[-100:],
     }
@@ -403,6 +404,8 @@ def load_runtime_state() -> bool:
         st.session_state.intracellular_baseline = baseline if isinstance(baseline, dict) else None
         notes = payload.get("intracellular_notes", [])
         st.session_state.intracellular_notes = notes if isinstance(notes, list) else []
+        discovered = payload.get("celldex_discovered", [])
+        st.session_state.celldex_discovered = discovered if isinstance(discovered, list) else []
         return True
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return False
@@ -635,6 +638,8 @@ def initialize_state() -> None:
         st.session_state.intracellular_baseline = None
     if "intracellular_notes" not in st.session_state:
         st.session_state.intracellular_notes = []
+    if "celldex_discovered" not in st.session_state:
+        st.session_state.celldex_discovered = []
     if "events" not in st.session_state:
         st.session_state.events = []
         record_event("创建实验", "恢复或创建当前模拟的起始状态")
@@ -669,6 +674,7 @@ def reset_simulation(profile_key: str, preset_name: str, volume: float, area: fl
     st.session_state.virtual_assay_rows = []
     st.session_state.intracellular_baseline = None
     st.session_state.intracellular_notes = []
+    st.session_state.celldex_discovered = []
     st.session_state.events = []
     st.session_state.scheduled_actions = []
     record_event("创建实验", f"细胞系={profile_key}；场景={preset_name}；体积={volume:g} mL；面积={area:g} cm²")
@@ -1494,6 +1500,60 @@ def _pixel_lab_data_uri() -> str:
     return f"data:image/png;base64,{encoded}"
 
 
+CORE_ORGANELLES = {
+    "mitochondria": ("⚡ 线粒体", "Mitochondrion", "Energy Station", "通过氧化磷酸化相关过程供应 ATP。"),
+    "nucleus": ("🧬 细胞核", "Nucleus", "Information Center", "储存 DNA，并参与基因表达与细胞周期调控。"),
+    "rer": ("≋ 粗面内质网", "Rough ER", "Protein Workshop", "参与分泌/膜蛋白折叠与质量控制。"),
+    "lysosome": ("● 溶酶体", "Lysosome", "Recycling Center", "参与降解、回收和自噬相关过程。"),
+}
+
+
+def organelle_explorer(cell, state: IntracellularState) -> None:
+    """稳定的原生点击热区：只读取现有状态并高亮已有 SVG 标签。"""
+    st.subheader("CELLDEX · 像素细胞器探索")
+    st.caption("点击细胞器，Tab 切换焦点，Enter/Space 选择；Esc 可关闭信息面板。")
+    columns = st.columns(4)
+    for column, (key, (label, *_)) in zip(columns, CORE_ORGANELLES.items()):
+        if column.button(label, key=f"core_organelle_{key}", width="stretch"):
+            st.session_state.focused_organelle = key
+            if key not in st.session_state.celldex_discovered:
+                st.session_state.celldex_discovered.append(key)
+                st.toast(f"✨ New Organelle Discovered! {label}", icon="✨")
+            record_event("探索细胞器", label)
+            save_runtime_state()
+    selected = st.session_state.get("focused_organelle")
+    if selected not in CORE_ORGANELLES:
+        return
+    label, english, role, function = CORE_ORGANELLES[selected]
+    if selected == "mitochondria":
+        status = "🟢 Active" if state.mitochondrial_potential_percent >= 70 else "🟡 Stressed" if state.mitochondrial_potential_percent >= 45 else "🔴 Low OXPHOS"
+        readout = f"ATP {state.atp_percent:.1f}% · 膜电位 {state.mitochondrial_potential_percent:.1f}% · ROS {state.ros_percent:.1f}%"
+        explanation = f"氧气 {cell.oxygen_percent:.1f}% 下降时，模型中的线粒体膜电位和 ATP 代理指标会降低。"
+    elif selected == "nucleus":
+        status = "🟢 Stable" if state.dna_damage_percent < 20 else "🟡 Repairing" if state.dna_damage_percent < 55 else "🔴 Damage alert"
+        readout = f"细胞周期 {state.cycle_phase} · DNA 损伤 {state.dna_damage_percent:.1f}% · ROS {state.ros_percent:.1f}%"
+        explanation = "ROS 和药物暴露会通过现有模型影响 DNA 损伤代理指标与凋亡信号。"
+    elif selected == "rer":
+        status = "🟢 Normal" if state.er_stress_percent < 25 else "🟡 Stressed" if state.er_stress_percent < 55 else "🔴 Stress alert"
+        readout = f"ER 应激 {state.er_stress_percent:.1f}% · Ca²⁺ {state.cytosolic_calcium_nm:.0f} nM · 蛋白合成 {state.protein_synthesis_percent:.1f}%"
+        explanation = f"葡萄糖 {cell.glucose_mm:.1f} mM、药物与 ROS 会影响现有模型的 ER 应激代理指标。"
+    else:
+        status = "🟢 Recycling" if state.autophagy_percent < 45 else "🟡 Autophagy high"
+        readout = f"自噬代理 {state.autophagy_percent:.1f}% · 凋亡信号 {state.apoptosis_signal_percent:.1f}%"
+        explanation = "能量压力与 ER 应激会提高自噬相关代理指标；它不是实验自噬通量。"
+    close_col, info_col = st.columns([.16, .84])
+    if close_col.button("× 关闭", key="close_organelle_panel", width="stretch"):
+        st.session_state.focused_organelle = ""
+        st.rerun()
+    info_col.markdown(f"### {english}｜{label}\n**角色：** {role}  \\n**功能：** {function}  \\n**当前状态：** {status}  \\n**关联指标：** {readout}  \\n**状态解释：** {explanation}")
+    if st.button("定位关联指标", key="focus_organelle_metrics"):
+        st.session_state.pending_toast = (f"已定位 {english} 的关联指标，请查看下方细胞内部状态曲线。", "📍")
+        st.rerun()
+    with st.expander(f"CellDex · 已发现 {len(st.session_state.celldex_discovered)}/{len(CORE_ORGANELLES)}", expanded=False):
+        for key, (dex_label, *_rest) in CORE_ORGANELLES.items():
+            st.write(f"{'✓' if key in st.session_state.celldex_discovered else '?'} {dex_label}")
+
+
 def pixel_lab_scene(cell) -> None:
     """渲染两个模式共享的像素实验室工作台与 HUD。"""
 
@@ -2068,6 +2128,7 @@ def intracellular_live_panel() -> None:
     )
     intracellular_metrics(state)
     intracellular_map(state)
+    organelle_explorer(st.session_state.cell, state)
     intracellular_actions(state)
 
 
