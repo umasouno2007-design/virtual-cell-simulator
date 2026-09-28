@@ -1,0 +1,155 @@
+"""教学性代表性子群通信层。
+
+本模块不重新计算 ATP、ROS、ER 应激或凋亡。它只读取 ``IntracellularState``
+已经生成的相对功能指数，把它们映射为有限的代表性子群和一个中性“应激
+旁分泌信号”相对指数。所有规则都是可审阅的聚合近似，不是细胞因子浓度、
+受体占有率、空间坐标或细胞通信预测。
+"""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from intracellular import IntracellularState
+
+
+def _clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
+    """将教学性相对指数限制在有限范围内。"""
+
+    return max(low, min(high, float(value)))
+
+
+@dataclass
+class CellCommunicationState:
+    """代表性子群与相对通信状态；比例单位为 %，其余均为相对指数。"""
+
+    resilient_fraction: float = 88.0
+    stressed_fraction: float = 10.0
+    injured_fraction: float = 2.0
+    stress_signal_index: float = 5.0
+    receiver_response_index: float = 4.0
+    time_h: float = 0.0
+
+    def snapshot(self) -> dict[str, float]:
+        """返回可导出快照；不包含真实浓度或单细胞测量。"""
+
+        return asdict(self)
+
+    def step(
+        self,
+        intracellular: "IntracellularState",
+        dt_h: float = 1.0,
+        *,
+        feedback_enabled: bool = False,
+    ) -> None:
+        """由既有细胞内状态推进聚合通信层。
+
+        输入为现有 ``IntracellularState`` 的相对指数，``dt_h`` 单位为小时。
+        默认 ``feedback_enabled=False`` 时不会改写输入状态；开启后仅施加温和、
+        有界的教学性反馈，且不会改变主培养动力学 ``CellCulture``。
+        """
+
+        dt_h = max(0.0, min(float(dt_h), 24.0))
+        if dt_h <= 0.0:
+            return
+
+        # 只复用既有状态：较高 ROS/ER/凋亡及较低 ATP 共同提高子群压力驱动。
+        ros_drive = _clamp((intracellular.ros_percent - 12.0) / 70.0, 0.0, 1.0)
+        er_drive = _clamp((intracellular.er_stress_percent - 8.0) / 70.0, 0.0, 1.0)
+        energy_drive = _clamp((68.0 - intracellular.atp_percent) / 68.0, 0.0, 1.0)
+        apoptosis_drive = _clamp((intracellular.apoptosis_signal_percent - 5.0) / 85.0, 0.0, 1.0)
+        damage_drive = _clamp((intracellular.dna_damage_percent - 5.0) / 85.0, 0.0, 1.0)
+
+        stress_drive = (
+            0.40 * ros_drive + 0.30 * er_drive + 0.20 * energy_drive
+            + 0.10 * apoptosis_drive
+        )
+        injury_drive = (
+            0.34 * apoptosis_drive + 0.28 * damage_drive + 0.20 * ros_drive
+            + 0.18 * energy_drive
+        )
+        target_injured = _clamp(2.0 + 60.0 * injury_drive, 1.0, 75.0)
+        target_stressed = _clamp(6.0 + 50.0 * stress_drive - 0.25 * target_injured, 3.0, 80.0)
+        target_stressed = min(target_stressed, 99.0 - target_injured)
+
+        # 一阶趋近：每小时最多向当前目标移动约 28%，避免视觉上的突跳。
+        adaptation = min(1.0, 0.28 * dt_h)
+        self.injured_fraction = _clamp(
+            self.injured_fraction + (target_injured - self.injured_fraction) * adaptation,
+            0.0,
+            95.0,
+        )
+        self.stressed_fraction = _clamp(
+            self.stressed_fraction + (target_stressed - self.stressed_fraction) * adaptation,
+            0.0,
+            99.0 - self.injured_fraction,
+        )
+        # 用余量计算以保证三类子群严格守恒为 100%。
+        self.resilient_fraction = 100.0 - self.stressed_fraction - self.injured_fraction
+
+        # 中性相对信号池：应激/受损子群释放，且具有一阶自然衰减。
+        release_index = 0.35 * self.stressed_fraction + 0.75 * self.injured_fraction
+        self.stress_signal_index = _clamp(
+            self.stress_signal_index + dt_h * (0.24 * release_index - 0.18 * self.stress_signal_index)
+        )
+        # 邻近细胞响应追随信号池，并不等同于真实受体响应或占有率。
+        response_rate = min(1.0, 0.30 * dt_h)
+        self.receiver_response_index = _clamp(
+            self.receiver_response_index
+            + (self.stress_signal_index - self.receiver_response_index) * response_rate
+        )
+        self.time_h += dt_h
+
+        if feedback_enabled:
+            self.apply_teaching_feedback(intracellular, dt_h)
+
+    def apply_teaching_feedback(self, intracellular: "IntracellularState", dt_h: float) -> None:
+        """对代表性细胞施加可选、温和且有界的教学性反馈。
+
+        这不是培养动力学的反馈项；只用于帮助观察“接收端响应可能放大压力”的
+        方向性关系。调用者须由用户界面明确授权。
+        """
+
+        signal = self.receiver_response_index / 100.0
+        intracellular.ros_percent = _clamp(intracellular.ros_percent + 1.2 * signal * dt_h)
+        intracellular.er_stress_percent = _clamp(intracellular.er_stress_percent + 0.9 * signal * dt_h)
+        intracellular.growth_signal_percent = _clamp(intracellular.growth_signal_percent - 0.9 * signal * dt_h)
+        intracellular.apoptosis_signal_percent = _clamp(intracellular.apoptosis_signal_percent + 0.65 * signal * dt_h)
+
+
+def representative_subpopulation_points(
+    state: CellCommunicationState, view: str = "子群状态", total_points: int = 36
+) -> list[dict[str, float | str]]:
+    """生成固定数量的示意点。
+
+    ``x`` / ``y`` 仅用于图中排版，绝不是细胞空间位置。``view`` 可为子群状态、
+    信号释放、接收端响应或命运倾向。
+    """
+
+    total_points = max(9, min(int(total_points), 100))
+    injured_count = min(total_points, round(total_points * state.injured_fraction / 100.0))
+    stressed_count = min(total_points - injured_count, round(total_points * state.stressed_fraction / 100.0))
+    resilient_count = total_points - injured_count - stressed_count
+    groups = (["稳态/适应"] * resilient_count + ["应激"] * stressed_count + ["受损"] * injured_count)
+    colors = {"稳态/适应": "#5f8f87", "应激": "#bd8a43", "受损": "#a85a61"}
+    markers = {"稳态/适应": "o", "应激": "s", "受损": "X"}
+    release = {"稳态/适应": 8.0, "应激": 55.0, "受损": 88.0}
+    fate = {"稳态/适应": 12.0, "应激": 45.0, "受损": 82.0}
+    points: list[dict[str, float | str]] = []
+    for index, group in enumerate(groups):
+        row, column = divmod(index, 6)
+        if view == "信号释放":
+            value = release[group]
+        elif view == "接收端响应":
+            value = state.receiver_response_index
+        elif view == "命运倾向":
+            value = fate[group]
+        else:
+            value = {"稳态/适应": 1.0, "应激": 2.0, "受损": 3.0}[group]
+        points.append({
+            "x": float(column + 0.35 * (row % 2)), "y": float(5 - row),
+            "group": group, "value": float(value), "color": colors[group], "marker": markers[group],
+        })
+    return points

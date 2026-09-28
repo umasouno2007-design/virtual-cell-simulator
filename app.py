@@ -15,6 +15,7 @@ import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from intracellular import IntracellularState, intracellular_status
+from cell_communication import CellCommunicationState, representative_subpopulation_points
 from evidence import REFERENCES, evidence_rows
 from calibration import fit_growth_and_uptake
 from experiment_data import (
@@ -36,6 +37,12 @@ from scenario import export_scenario, import_scenario
 from version import MODEL_VERSION
 from profiles import CELL_PROFILES
 from simulation import PRESETS, cell_status, new_simulation
+
+
+# 机制链和子群图由服务器端 Matplotlib 生成；显式提供中文字体回退，避免图中
+# 关键证据/边界文字在 Windows 或云端环境显示为方框。
+plt.rcParams["font.sans-serif"] = ["Noto Sans SC", "Microsoft YaHei", "SimHei", "DejaVu Sans"]
+plt.rcParams["axes.unicode_minus"] = False
 
 
 st.set_page_config(page_title="e-cell", page_icon="🧫", layout="wide")
@@ -386,6 +393,9 @@ def save_runtime_state() -> None:
         "app_mode": st.session_state.get("app_mode", "细胞培养"),
         "intracellular": asdict(st.session_state.get("intracellular", IntracellularState())),
         "intracellular_history": st.session_state.get("intracellular_history", [])[-MAX_HISTORY_POINTS:],
+        "cell_communication": asdict(st.session_state.get("cell_communication", CellCommunicationState())),
+        "cell_communication_history": st.session_state.get("cell_communication_history", [])[-MAX_HISTORY_POINTS:],
+        "communication_feedback_enabled": st.session_state.get("communication_feedback_enabled", False),
         "intracellular_samples": st.session_state.get("intracellular_samples", [])[-500:],
         "intracellular_challenge": st.session_state.get("intracellular_challenge"),
         "virtual_assay_rows": st.session_state.get("virtual_assay_rows", [])[-2000:],
@@ -455,6 +465,21 @@ def load_runtime_state() -> bool:
             intracellular_history[-MAX_HISTORY_POINTS:]
             if isinstance(intracellular_history, list) and intracellular_history
             else [st.session_state.intracellular.snapshot()]
+        )
+        communication_payload = payload.get("cell_communication", {})
+        communication_fields = CellCommunicationState.__dataclass_fields__
+        st.session_state.cell_communication = CellCommunicationState(**{
+            name: value for name, value in communication_payload.items()
+            if name in communication_fields
+        })
+        communication_history = payload.get("cell_communication_history")
+        st.session_state.cell_communication_history = (
+            communication_history[-MAX_HISTORY_POINTS:]
+            if isinstance(communication_history, list) and communication_history
+            else [st.session_state.cell_communication.snapshot()]
+        )
+        st.session_state.communication_feedback_enabled = bool(
+            payload.get("communication_feedback_enabled", False)
         )
         st.session_state.app_mode = payload.get("app_mode", "细胞培养")
         st.session_state.events = payload.get("events", [])
@@ -590,9 +615,17 @@ def advance_simulation_hours(simulated_hours: float) -> float:
             continue
         cell.step(actual_step)
         st.session_state.intracellular.step(cell, actual_step)
+        st.session_state.cell_communication.step(
+            st.session_state.intracellular,
+            actual_step,
+            feedback_enabled=st.session_state.get("communication_feedback_enabled", False),
+        )
         st.session_state.history.append(cell.snapshot())
         st.session_state.intracellular_history.append(
             st.session_state.intracellular.snapshot()
+        )
+        st.session_state.cell_communication_history.append(
+            st.session_state.cell_communication.snapshot()
         )
         remaining -= actual_step
         iterations += 1
@@ -700,6 +733,14 @@ def initialize_state() -> None:
         st.session_state.intracellular_history = [
             st.session_state.intracellular.snapshot()
         ]
+    if "cell_communication" not in st.session_state:
+        st.session_state.cell_communication = CellCommunicationState()
+    if "cell_communication_history" not in st.session_state:
+        st.session_state.cell_communication_history = [
+            st.session_state.cell_communication.snapshot()
+        ]
+    if "communication_feedback_enabled" not in st.session_state:
+        st.session_state.communication_feedback_enabled = False
     if "intracellular_samples" not in st.session_state:
         st.session_state.intracellular_samples = []
     if "intracellular_challenge" not in st.session_state:
@@ -724,6 +765,9 @@ def initialize_state() -> None:
     st.session_state.intracellular_history = (
         st.session_state.intracellular_history[-MAX_HISTORY_POINTS:]
     )
+    st.session_state.cell_communication_history = (
+        st.session_state.cell_communication_history[-MAX_HISTORY_POINTS:]
+    )
 
 
 def reset_simulation(profile_key: str, preset_name: str, volume: float, area: float) -> None:
@@ -743,6 +787,11 @@ def reset_simulation(profile_key: str, preset_name: str, volume: float, area: fl
     st.session_state.intracellular_history = [
         st.session_state.intracellular.snapshot()
     ]
+    st.session_state.cell_communication = CellCommunicationState()
+    st.session_state.cell_communication_history = [
+        st.session_state.cell_communication.snapshot()
+    ]
+    st.session_state.communication_feedback_enabled = False
     st.session_state.intracellular_samples = []
     st.session_state.intracellular_challenge = None
     st.session_state.virtual_assay_rows = []
@@ -2512,6 +2561,156 @@ def plot_intracellular_history(history) -> None:
     plt.close(fig)
 
 
+COMMUNICATION_NODE_DETAILS = {
+    "培养环境压力": {
+        "upstream": "氧、葡萄糖、pH、药物与汇合度来自当前培养模型。",
+        "downstream": "现有细胞内模型据此更新 ATP、ROS、ER 应激与 DNA 损伤代理指标。",
+        "rule": "此处不新增环境方程，只显示现有培养环境如何成为细胞内状态的上游。",
+        "limit": "环境数值是培养模型输入/代理量，不是细胞周围的微区实测。",
+    },
+    "细胞内压力": {
+        "upstream": "复用现有 ATP、ROS、ER 应激与 DNA 损伤相对指数。",
+        "downstream": "这些指标共同、温和地改变代表性稳态/应激/受损子群比例。",
+        "rule": "ROS、ER 应激、ATP 缺口与凋亡信号使用固定权重形成教学性压力驱动。",
+        "limit": "不是单细胞测量，也不表示各通路的因果效应大小。",
+    },
+    "代表性子群": {
+        "upstream": "细胞内压力驱动；三类比例总和始终严格为 100%。",
+        "downstream": "应激与受损比例推动中性的应激旁分泌信号池。",
+        "rule": "用一阶趋近把当前代表性状态映射为稳态/适应、应激、受损三类示意比例。",
+        "limit": "不是流式分群、真实细胞数、克隆组成或空间分布。",
+    },
+    "应激旁分泌信号池": {
+        "upstream": "应激与受损代表性子群按固定教学性权重释放信号；信号同时自然衰减。",
+        "downstream": "信号池提高邻近细胞的相对接收端响应。",
+        "rule": "这是中性、无单位的相对指数，不指定任何细胞因子或实际浓度。",
+        "limit": "不能解读为 IL-6、TGF-β、TNF-α 或任何具体分子的浓度。",
+    },
+    "邻近细胞响应": {
+        "upstream": "接收端响应以一阶方式追随信号池。",
+        "downstream": "仅在用户明确开启反馈时，轻微影响代表性细胞的 ROS、ER 应激、增殖与凋亡倾向。",
+        "rule": "响应是有界的相对指数；默认仅显示，不反馈到细胞内状态。",
+        "limit": "不是受体占有率、细胞通信预测或真实细胞间信号测量。",
+    },
+    "命运倾向": {
+        "upstream": "现有模型的增殖、自噬、凋亡相对指数；可选通信反馈仅改变代表性细胞状态。",
+        "downstream": "用于解释教学场景中的适应、应激或受损倾向。",
+        "rule": "反馈开启时按接收端响应施加小幅、有界方向性变化。",
+        "limit": "不能预测实际死亡比例、克隆选择、组织反应或治疗结果。",
+    },
+}
+
+
+def _communication_chain_rows(cell, state: IntracellularState, communication: CellCommunicationState) -> list[dict[str, str]]:
+    """组织机制链表格；每项都标注类型、单位和证据等级。"""
+
+    return [
+        {"节点": "氧 / 葡萄糖 / pH / 药物 / 汇合度", "当前值": f"{cell.oxygen_percent:.1f}% / {cell.glucose_mm:.2f} mM / {cell.ph:.2f} / {cell.drug_um:.2f} µM / {cell.confluence_percent:.1f}%", "类型与单位": "培养环境代理量", "证据": "B 文献驱动方向"},
+        {"节点": "ATP / ROS / ER 应激 / DNA 损伤", "当前值": f"{state.atp_percent:.1f} / {state.ros_percent:.1f} / {state.er_stress_percent:.1f} / {state.dna_damage_percent:.1f}", "类型与单位": "相对功能指数（0–100）", "证据": "B 待校准先验"},
+        {"节点": "稳态 / 应激 / 受损代表性子群", "当前值": f"{communication.resilient_fraction:.1f}% / {communication.stressed_fraction:.1f}% / {communication.injured_fraction:.1f}%", "类型与单位": "代表性比例（总和 100%）", "证据": "C 教学规则"},
+        {"节点": "应激旁分泌信号池", "当前值": f"{communication.stress_signal_index:.1f}", "类型与单位": "相对指数（0–100）", "证据": "C 教学规则"},
+        {"节点": "邻近细胞响应", "当前值": f"{communication.receiver_response_index:.1f}", "类型与单位": "相对指数（0–100）", "证据": "C 教学规则"},
+        {"节点": "增殖 / 自噬 / 凋亡倾向", "当前值": f"{state.growth_signal_percent:.1f} / {state.autophagy_percent:.1f} / {state.apoptosis_signal_percent:.1f}", "类型与单位": "相对功能指数（0–100）", "证据": "B；反馈为 C"},
+    ]
+
+
+def _plot_communication_chain(communication: CellCommunicationState) -> plt.Figure:
+    """绘制无动画的因果链；线宽与当前影响强度相关，线型区分证据层级。"""
+
+    fig, ax = plt.subplots(figsize=(10.8, 3.8))
+    ax.set_xlim(0, 12)
+    ax.set_ylim(0, 3)
+    ax.axis("off")
+    nodes = [
+        (0.1, 1.15, "培养环境\nB 方向"),
+        (2.15, 1.15, "ATP · ROS · ER\nB 相对指数"),
+        (4.35, 1.15, "代表性子群\nC 聚合规则"),
+        (6.45, 1.15, "应激旁分泌\nC 相对指数"),
+        (8.55, 1.15, "邻近细胞响应\nC 相对指数"),
+        (10.65, 1.15, "增殖 · 自噬 · 凋亡\nB / C"),
+    ]
+    colors = ["#dae5ee", "#d7e8e8", "#eee7d8", "#eee7d8", "#eee7d8", "#e4e8ed"]
+    for (x, y, label), color in zip(nodes, colors):
+        ax.text(x + 0.55, y + 0.35, label, ha="center", va="center", fontsize=8.6,
+                bbox={"boxstyle": "round,pad=0.45", "fc": color, "ec": "#526573", "lw": 0.9})
+    strengths = [0.8, 1.0, communication.stressed_fraction / 100.0, communication.stress_signal_index / 100.0, communication.receiver_response_index / 100.0]
+    for index, strength in enumerate(strengths):
+        x = nodes[index][0] + 1.15
+        linestyle = "-" if index < 2 else "--"
+        ax.annotate("", xy=(x + 0.8, 1.5), xytext=(x, 1.5),
+                    arrowprops={"arrowstyle": "->", "color": "#415766", "lw": 1.1 + 3.0 * strength, "linestyle": linestyle})
+    ax.text(0.1, 0.18, "实线＝文献驱动方向（B）；虚线＝待校准/教学聚合规则（C）；箭头宽度＝当前相对影响，不代表定量因果效应。", fontsize=8, color="#465c69")
+    fig.tight_layout(pad=0.5)
+    return fig
+
+
+def _plot_subpopulation_map(communication: CellCommunicationState, view: str) -> plt.Figure:
+    """绘制有限代表点地图；坐标只用于排版。"""
+
+    points = representative_subpopulation_points(communication, view)
+    fig, ax = plt.subplots(figsize=(6.4, 3.7))
+    labels_seen: set[str] = set()
+    for point in points:
+        group = str(point["group"])
+        label = group if group not in labels_seen else None
+        labels_seen.add(group)
+        value = float(point["value"])
+        size = 65 + value * 1.15 if view != "子群状态" else 95
+        ax.scatter(float(point["x"]), float(point["y"]), s=size, marker=str(point["marker"]),
+                   c=str(point["color"]), alpha=0.42 + min(0.5, value / 180.0),
+                   edgecolors="#31424b", linewidths=0.65, label=label)
+    ax.set_xlim(-0.6, 6.3)
+    ax.set_ylim(-0.7, 5.7)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_facecolor("#f7f9fa")
+    for spine in ax.spines.values():
+        spine.set_color("#aebdc5")
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.08), ncol=3, frameon=False, fontsize=8)
+    ax.set_title(f"代表性子群图 · {view}", fontsize=10, loc="left")
+    fig.tight_layout()
+    return fig
+
+
+def cell_communication_panel(cell, state: IntracellularState) -> None:
+    """渲染教学性机制链与子群通信页，不替代既有细胞器或虚拟检测。"""
+
+    communication = st.session_state.cell_communication
+    st.subheader("机制链与细胞通信")
+    st.info("教学性、机制探索性的代表性子群模型：所有通信值均为相对指数；不代表真实细胞因子浓度、受体占有率、单细胞测量、空间组学或细胞通信预测。")
+    feedback = st.toggle(
+        "启用教学性通信反馈（仅影响代表性细胞相对状态）",
+        key="communication_feedback_enabled",
+        help="默认关闭：不改写任何现有细胞内状态或主培养动力学。开启后，接收端相对响应才会对 ROS、ER 应激、增殖/凋亡倾向产生小幅有界反馈。",
+    )
+    st.caption("反馈状态：" + ("已启用；下一次时间推进后生效，主培养动力学保持不变。" if feedback else "未启用；通信层仅作为解释性观察，不改变现有模型结果。"))
+
+    chain_col, detail_col = st.columns([1.55, 1.0], gap="medium")
+    with chain_col:
+        figure = _plot_communication_chain(communication)
+        st.pyplot(figure, width="stretch")
+        plt.close(figure)
+        st.dataframe(pd.DataFrame(_communication_chain_rows(cell, state, communication)), hide_index=True, width="stretch")
+    with detail_col:
+        node = st.selectbox("选择机制节点", list(COMMUNICATION_NODE_DETAILS), key="communication_node")
+        detail = COMMUNICATION_NODE_DETAILS[node]
+        st.markdown(f"#### {node}")
+        st.markdown(f"**上游驱动：** {detail['upstream']}\n\n**下游影响：** {detail['downstream']}\n\n**当前规则：** {detail['rule']}\n\n**不能如何解读：** {detail['limit']}")
+        st.caption("证据解释：B 表示方向有文献依据但数值待校准；C 表示为机制理解设置的教学规则。")
+
+    st.markdown("##### 子群地图")
+    map_col, note_col = st.columns([1.35, 1.0], gap="medium")
+    with map_col:
+        view = st.radio("查看方式", ["子群状态", "信号释放", "接收端响应", "命运倾向"], horizontal=True, key="communication_map_view")
+        figure = _plot_subpopulation_map(communication, view)
+        st.pyplot(figure, width="stretch")
+        plt.close(figure)
+    with note_col:
+        st.markdown("**图例与范围**")
+        st.markdown("- ○ 稳态/适应；□ 应激；✕ 受损。颜色、形状与文字共同区分子群。\n- 点数量固定且有限，只用于展示当前代表性比例。\n- 点的二维位置是排版，不是空间坐标、显微图像或单细胞组学结果。\n- ‘信号释放’、‘接收端响应’与‘命运倾向’均为无单位相对指数。")
+        st.caption(f"当前：稳态/适应 {communication.resilient_fraction:.1f}% · 应激 {communication.stressed_fraction:.1f}% · 受损 {communication.injured_fraction:.1f}%")
+
+
 @st.fragment(run_every=1.0)
 def intracellular_live_panel() -> None:
     """随共享时钟刷新细胞器功能状态。"""
@@ -2522,10 +2721,14 @@ def intracellular_live_panel() -> None:
     getattr(st, status_level)(
         f"当前状态：{html.escape(status_text)}｜细胞周期 {state.cycle_phase}"
     )
-    intracellular_metrics(state)
-    intracellular_map(state)
-    organelle_explorer(st.session_state.cell, state)
-    intracellular_actions(state)
+    activity_tab, communication_tab = st.tabs(["细胞器与生命活动", "机制链与细胞通信"])
+    with activity_tab:
+        intracellular_metrics(state)
+        intracellular_map(state)
+        organelle_explorer(st.session_state.cell, state)
+        intracellular_actions(state)
+    with communication_tab:
+        cell_communication_panel(st.session_state.cell, state)
 
 
 @st.fragment(run_every=1.0)
