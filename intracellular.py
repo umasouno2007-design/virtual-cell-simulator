@@ -2,7 +2,7 @@
 
 这是连接培养环境与细胞器功能的最小模型，不试图替代全基因组代谢网络。
 所有百分比均为相对功能指数，适合做趋势探索，不能直接当作实验测量值。
-ATP/膜电位/ROS、UPR、DNA 损伤、自噬和凋亡之间的调节方向有文献支持，
+ATP/膜电位/ROS、UPR、DNA 损伤、自噬和促凋亡压力之间的调节方向有文献支持，
 但本文件中的权重、阈值、时间常数和周期分段全部属于演示规则，尚未校准。
 完整证据边界与来源见 ``evidence.py``。
 """
@@ -20,7 +20,7 @@ def _bounded(value: float, low: float = 0.0, high: float = 100.0) -> float:
 
 @dataclass
 class IntracellularState:
-    """单个代表性细胞的功能状态。"""
+    """单个代表性细胞的相对功能状态，不是实验测量或细胞比例。"""
 
     time_h: float = 0.0
     atp_percent: float = 88.0
@@ -40,21 +40,25 @@ class IntracellularState:
     def step(self, culture: "CellCulture", dt_h: float = 1.0) -> None:
         """根据培养环境推进细胞器与命运的相对指数。
 
-        这里不是 ODE 生化网络，也不输出 ATP 浓度、膜电位 mV、自噬通量或
-        DNA 损伤灶数。所有线性组合只用于产生可解释的趋势与交互反馈。
+        ``culture.oxygen_percent`` 在本模块中是“局部氧可用性代理”，并不等同于
+        培养箱头空间氧、培养液溶氧或组织生理氧。这里不是 ODE 生化网络，也不
+        输出 ATP 浓度、膜电位 mV、自噬通量、DNA 损伤灶数或凋亡细胞比例。
+        所有线性组合只用于产生可解释的趋势与交互反馈。
         """
 
         if dt_h <= 0:
             return
         dt_h = min(float(dt_h), 6.0)
-        oxygen = _bounded(culture.oxygen_percent / 18.6, 0.0, 1.0)
+        # 该代理量来自单室培养模型；其换算、阈值和时间常数均为待校准教学规则。
+        local_oxygen_availability = _bounded(culture.oxygen_percent / 18.6, 0.0, 1.0)
         glucose = _bounded(culture.glucose_mm / culture.profile.initial_glucose_mm, 0.0, 1.0)
         ph_fitness = _bounded(1.0 - abs(culture.ph - 7.35) / 0.9, 0.0, 1.0)
         thermal_fitness = _bounded(1.0 - abs(culture.temperature_c - 37.0) / 6.0, 0.0, 1.0)
         drug_stress = culture.drug_um / (culture.drug_um + culture.parameters.drug_ic50_um)
 
-        mitochondrial_target = 22.0 + 72.0 * oxygen * thermal_fitness * (1.0 - 0.45 * drug_stress)
-        glycolysis_target = 18.0 + 68.0 * glucose * (1.0 + 0.28 * (1.0 - oxygen))
+        mitochondrial_target = 22.0 + 72.0 * local_oxygen_availability * thermal_fitness * (1.0 - 0.45 * drug_stress)
+        # 低氧下的糖酵解补偿是方向性教学规则，不能解读为任意细胞系的定量通量。
+        glycolysis_target = 18.0 + 68.0 * glucose * (1.0 + 0.28 * (1.0 - local_oxygen_availability))
         self.mitochondrial_potential_percent += (mitochondrial_target - self.mitochondrial_potential_percent) * min(1.0, 0.22 * dt_h)
         self.glycolysis_percent += (glycolysis_target - self.glycolysis_percent) * min(1.0, 0.28 * dt_h)
 
@@ -65,7 +69,10 @@ class IntracellularState:
         )
         self.atp_percent += (atp_target - self.atp_percent) * min(1.0, 0.32 * dt_h)
 
-        ros_target = 6.0 + 42.0 * (1.0 - oxygen) + 30.0 * drug_stress
+        # 不将“氧越低→ROS 必然越高”写成直接单调规则：低氧、复氧、细胞系、
+        # 暴露时间和抗氧化能力均可改变 ROS 方向。这里只保留药物与既有线粒体
+        # 功能失衡的教学性压力项，ROS 本身仍是相对红氧状态指数。
+        ros_target = 6.0 + 30.0 * drug_stress
         ros_target += max(0.0, 55.0 - self.mitochondrial_potential_percent) * 0.35
         self.ros_percent += (ros_target - self.ros_percent) * min(1.0, 0.26 * dt_h)
 
@@ -76,6 +83,7 @@ class IntracellularState:
         er_target = 5.0 + 36.0 * (1.0 - glucose) + 28.0 * drug_stress
         er_target += max(0.0, self.ros_percent - 35.0) * 0.25
         self.er_stress_percent += (er_target - self.er_stress_percent) * min(1.0, 0.18 * dt_h)
+        # 自噬指数表示适应/回收压力，并不区分保护性自噬、受损自噬或自噬依赖死亡。
         autophagy_target = 8.0 + 0.42 * self.er_stress_percent + 0.35 * max(0.0, 55.0 - self.atp_percent)
         self.autophagy_percent += (autophagy_target - self.autophagy_percent) * min(1.0, 0.22 * dt_h)
 
@@ -85,6 +93,7 @@ class IntracellularState:
         self.growth_signal_percent = _bounded(
             45.0 * glucose + 32.0 * ph_fitness + 23.0 * (1.0 - culture.confluence_percent / 100.0)
         )
+        # 促凋亡压力相对指数，不是凋亡阳性细胞比例、caspase 活性或死亡结局。
         apoptosis_target = _bounded(
             0.48 * self.dna_damage_percent
             + 0.34 * self.ros_percent
@@ -124,13 +133,13 @@ class IntracellularState:
         return "M"
 
     def apply_oxidative_stress(self, intensity: float = 20.0) -> None:
-        """施加一次可控氧化刺激，便于观察下游响应。"""
+        """施加一次教学性氧化压力脉冲，便于观察相对状态的下游趋势。"""
 
         self.ros_percent = _bounded(self.ros_percent + intensity)
         self.dna_damage_percent = _bounded(self.dna_damage_percent + intensity * 0.12)
 
     def apply_antioxidant_response(self, intensity: float = 15.0) -> None:
-        """模拟增强抗氧化清除能力；既有 DNA 损伤仍需随时间修复。"""
+        """模拟增强抗氧化清除能力；既有 DNA 损伤代理仍需随时间恢复。"""
 
         self.ros_percent = _bounded(self.ros_percent - intensity)
 
@@ -157,7 +166,7 @@ def intracellular_status(state: IntracellularState) -> tuple[str, str]:
     """返回代表性细胞的综合状态与 Streamlit 提示级别。"""
 
     if state.apoptosis_signal_percent >= 70.0:
-        return "凋亡程序高度激活", "error"
+        return "促凋亡压力相对指数高", "error"
     if state.atp_percent < 30.0 or state.dna_damage_percent >= 60.0:
         return "细胞稳态严重受损", "error"
     if state.ros_percent >= 45.0 or state.er_stress_percent >= 45.0:

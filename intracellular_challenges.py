@@ -1,6 +1,6 @@
-"""细胞内状态互动挑战的可解释判定规则。
+"""细胞内条件观察的可解释判定规则。
 
-挑战用于引导用户观察模型内既有状态的时间顺序；阈值均为演示性规则，
+条件观察用于引导用户查看模型内既有状态的时间顺序；阈值均为演示性规则，
 并非细胞系通用质量标准或实验放行标准。
 """
 
@@ -9,18 +9,18 @@ from typing import Any
 
 CHALLENGES: dict[str, dict[str, Any]] = {
     "oxidative_recovery": {
-        "title": "氧化应激恢复",
+        "title": "氧化压力恢复观察",
         "description": "施加一次 ROS/DNA 损伤脉冲后，观察抗氧化响应与后续培养能否恢复稳态。",
         "starter": "oxidative_stress",
         "requirements": [
             ("ros_percent", "ROS", "at_most", 25.0),
             ("dna_damage_percent", "DNA 损伤", "at_most", 15.0),
-            ("apoptosis_signal_percent", "凋亡信号", "at_most", 18.0),
+            ("apoptosis_signal_percent", "促凋亡压力", "at_most", 18.0),
         ],
     },
     "proteostasis_recovery": {
-        "title": "蛋白稳态恢复",
-        "description": "提高内质网压力后，追踪蛋白合成、自噬代理指标与能量状态。",
+        "title": "蛋白稳态恢复观察",
+        "description": "提高内质网压力后，追踪蛋白合成、自噬适应/回收压力与能量状态。",
         "starter": "er_stress",
         "requirements": [
             ("er_stress_percent", "内质网应激", "at_most", 22.0),
@@ -29,7 +29,7 @@ CHALLENGES: dict[str, dict[str, Any]] = {
         ],
     },
     "energy_checkpoint": {
-        "title": "能量检查点",
+        "title": "能量状态检查",
         "description": "在低能量起点下，观察线粒体膜电位、ATP 与细胞周期推进的耦合趋势。",
         "starter": "energy_stress",
         "requirements": [

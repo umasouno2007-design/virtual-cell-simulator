@@ -31,8 +31,8 @@ ASSAYS: dict[str, dict[str, str]] = {
         "note": "不是自噬通量；真实实验需结合 LC3/p62 与溶酶体抑制条件。",
     },
     "apoptosis_probe": {
-        "label": "凋亡探针阳性率", "metric": "apoptosis_signal_percent", "unit": "% 阳性（演示）",
-        "note": "不等价于 Annexin V/PI、caspase 或形态学判读。",
+        "label": "促凋亡压力关联读出", "metric": "apoptosis_signal_percent", "unit": "相对信号（演示）",
+        "note": "不等价于 Annexin V/PI 阳性率、caspase 活性或形态学判读。",
     },
 }
 

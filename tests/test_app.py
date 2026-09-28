@@ -59,7 +59,7 @@ class AppStateTestCase(unittest.TestCase):
         app = AppTest.from_file(app_path).run(timeout=30)
         before = app.session_state["cell"].glucose_mm
         glucose_button = next(
-            item for item in app.button if item.label == "🍬 投入葡萄糖"
+            item for item in app.button if item.label == "补充葡萄糖"
         )
 
         glucose_button.click().run(timeout=30)
@@ -149,7 +149,7 @@ class AppStateTestCase(unittest.TestCase):
         app = AppTest.from_file(app_path).run(timeout=30)
         mode = next(item for item in app.radio if item.label == "模拟模式")
         mode.set_value("细胞生命活动").run(timeout=30)
-        mitochondria = next(item for item in app.button if item.label == "⚡ 线粒体")
+        mitochondria = next(item for item in app.button if item.label == "线粒体")
         mitochondria.click().run(timeout=30)
         self.assertEqual(app.session_state["focused_organelle"], "mitochondria")
         self.assertIn("mitochondria", app.session_state["celldex_discovered"])
@@ -161,7 +161,7 @@ class AppStateTestCase(unittest.TestCase):
         app = AppTest.from_file(app_path).run(timeout=30)
         mode = next(item for item in app.radio if item.label == "模拟模式")
         mode.set_value("细胞生命活动").run(timeout=30)
-        sample_button = next(item for item in app.button if item.label == "🔬 记录采样")
+        sample_button = next(item for item in app.button if item.label == "记录采样")
         sample_button.click().run(timeout=30)
 
         sample = app.session_state["intracellular_samples"][-1]
@@ -174,7 +174,7 @@ class AppStateTestCase(unittest.TestCase):
         app = AppTest.from_file(app_path).run(timeout=30)
         mode = next(item for item in app.radio if item.label == "模拟模式")
         mode.set_value("细胞生命活动").run(timeout=30)
-        plate_button = next(item for item in app.button if item.label == "生成虚拟读板")
+        plate_button = next(item for item in app.button if item.label == "生成合成检测读出")
         plate_button.click().run(timeout=30)
 
         rows = app.session_state["virtual_assay_rows"]
@@ -188,7 +188,7 @@ class AppStateTestCase(unittest.TestCase):
         app = AppTest.from_file(app_path).run(timeout=30)
         mode = next(item for item in app.radio if item.label == "模拟模式")
         mode.set_value("细胞生命活动").run(timeout=30)
-        baseline_button = next(item for item in app.button if item.label == "📍 设为当前基线")
+        baseline_button = next(item for item in app.button if item.label == "设为当前基线")
         baseline_button.click().run(timeout=30)
 
         baseline = app.session_state["intracellular_baseline"]
@@ -204,7 +204,7 @@ class AppStateTestCase(unittest.TestCase):
         mode.set_value("细胞生命活动").run(timeout=30)
         note_input = next(item for item in app.text_area if item.label == "观察或假设")
         note_input.set_value("ROS 的变化需要实测确认。").run(timeout=30)
-        note_button = next(item for item in app.button if item.label == "📝 保存观察笔记")
+        note_button = next(item for item in app.button if item.label == "保存观察笔记")
         note_button.click().run(timeout=30)
 
         note = app.session_state["intracellular_notes"][-1]
@@ -218,7 +218,7 @@ class AppStateTestCase(unittest.TestCase):
         app = AppTest.from_file(app_path).run(timeout=30)
         mode = next(item for item in app.radio if item.label == "模拟模式")
         mode.set_value("细胞生命活动").run(timeout=30)
-        trace_button = next(item for item in app.button if item.label == "✨ 高亮并追踪此链")
+        trace_button = next(item for item in app.button if item.label == "定位关联通路")
         trace_button.click().run(timeout=30)
 
         self.assertEqual(app.session_state["focused_organelle"], "mitochondria")

@@ -7,7 +7,7 @@ from intracellular import IntracellularState, intracellular_status
 
 
 class IntracellularStateTestCase(unittest.TestCase):
-    def test_hypoxia_reduces_mitochondrial_function_and_atp(self) -> None:
+    def test_low_oxygen_reduces_mitochondrial_function_and_atp_without_forcing_ros_direction(self) -> None:
         control_culture = CellCulture("hela")
         hypoxic_culture = CellCulture("hela")
         hypoxic_culture.oxygen_percent = 0.5
@@ -23,7 +23,27 @@ class IntracellularStateTestCase(unittest.TestCase):
             control.mitochondrial_potential_percent,
         )
         self.assertLess(hypoxic.atp_percent, control.atp_percent)
-        self.assertGreater(hypoxic.ros_percent, control.ros_percent)
+        # ROS 方向取决于暴露、复氧、药物和抗氧化背景；模型不再把低氧直接写成
+        # 单调 ROS 增加规则。
+        self.assertGreaterEqual(hypoxic.ros_percent, 0.0)
+        self.assertLessEqual(hypoxic.ros_percent, 100.0)
+
+    def test_low_oxygen_has_no_direct_monotonic_ros_term(self) -> None:
+        control_culture = CellCulture("hela")
+        low_oxygen_culture = CellCulture("hela")
+        low_oxygen_culture.oxygen_percent = 0.5
+        control = IntracellularState()
+        low_oxygen = IntracellularState()
+
+        # 一步后已能看到膜电位目标不同；ROS 仍相同，证明模型没有把氧变量
+        # 直接作为“越低越高”的 ROS 加项。后续 ROS 可受线粒体状态等间接因素影响。
+        control.step(control_culture, 1.0)
+        low_oxygen.step(low_oxygen_culture, 1.0)
+        self.assertLess(
+            low_oxygen.mitochondrial_potential_percent,
+            control.mitochondrial_potential_percent,
+        )
+        self.assertAlmostEqual(low_oxygen.ros_percent, control.ros_percent, places=8)
 
     def test_drug_exposure_increases_damage_and_apoptosis_signal(self) -> None:
         culture = CellCulture("a549")
@@ -53,7 +73,7 @@ class IntracellularStateTestCase(unittest.TestCase):
 
     def test_status_reports_severe_apoptosis(self) -> None:
         state = IntracellularState(apoptosis_signal_percent=75.0)
-        self.assertEqual(intracellular_status(state), ("凋亡程序高度激活", "error"))
+        self.assertEqual(intracellular_status(state), ("促凋亡压力相对指数高", "error"))
 
 
 if __name__ == "__main__":
