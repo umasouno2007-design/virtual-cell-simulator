@@ -15,12 +15,7 @@ class AppStateTestCase(unittest.TestCase):
 
         ph_input.set_value(6.8).run(timeout=30)
 
-        metric_grid = next(
-            item for item in app.markdown
-            if '<div class="vc-metric-grid">' in item.value
-        )
         self.assertEqual(app.session_state["cell"].ph, 6.8)
-        self.assertIn("6.80", metric_grid.value)
         self.assertIn("pH 偏离推荐范围", app.warning[0].value)
         self.assertEqual(len(app.exception), 0)
 
@@ -28,7 +23,7 @@ class AppStateTestCase(unittest.TestCase):
         app_path = Path(__file__).resolve().parents[1] / "app.py"
         app = AppTest.from_file(app_path).run(timeout=30)
 
-        self.assertTrue(any("vc-overview" in item.value for item in app.get("html")))
+        self.assertTrue(any("ec-context" in item.value for item in app.markdown))
         reset_button = next(item for item in app.button if item.label == "创建/重置实验")
         reset_button.click().run(timeout=30)
         self.assertTrue(any("操作完成" in item.value for item in app.success))
@@ -43,9 +38,7 @@ class AppStateTestCase(unittest.TestCase):
 
         oxygen_input.set_value(12.0).run(timeout=30)
 
-        self.assertTrue(
-            any('data-effect="oxygen-' in item.value for item in app.get("html"))
-        )
+        self.assertEqual(app.session_state["visual_effect"], "oxygen")
         self.assertEqual(len(app.exception), 0)
 
     def test_running_culture_catches_up_from_wall_clock(self) -> None:
@@ -73,9 +66,7 @@ class AppStateTestCase(unittest.TestCase):
 
         self.assertAlmostEqual(app.session_state["cell"].glucose_mm, before + 1.0)
         self.assertEqual(app.session_state["events"][-1]["event"], "补充葡萄糖")
-        self.assertTrue(
-            any("vc-html-sugar" in item.value for item in app.get("html"))
-        )
+        self.assertEqual(app.session_state["visual_effect"], "glucose")
         self.assertEqual(len(app.exception), 0)
 
     def test_quality_control_panel_is_available_without_changing_model(self) -> None:

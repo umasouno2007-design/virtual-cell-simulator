@@ -201,6 +201,45 @@ st.markdown(
     .vc-dish {border-radius:12px!important;border:5px solid #22345a!important;box-shadow:5px 5px 0 #22345a!important;}
     [data-testid="stExpander"] {border:3px solid #a7bfd2;border-radius:3px;background:rgba(255,255,255,.84);}
     @media (max-width:560px) {.px-lab-room{min-height:250px}.px-lab-content{padding:.8rem}.px-room-switch{grid-template-columns:1fr}.px-hud span{font-size:.72rem;}}
+    /* 科研工作台覆盖层：旧像素实验室组件仍保留为教学模式资源，但不主导培养页面。 */
+    .stApp,[data-testid="stAppViewContainer"] {background:#f7f9fb!important;color:#202a33;}
+    .block-container {max-width:1680px;padding-top:.8rem;}
+    [data-testid="stSidebar"] {background:#eef3f7!important;border-right:1px solid #cbd6df!important;}
+    [data-testid="stSidebar"] * {color:#203446!important;}
+    h1,h2,h3,h4,h5,h6 {color:#203446!important;letter-spacing:.01em;}
+    div.stButton > button,div.stDownloadButton > button {border:1px solid #496477!important;border-radius:3px!important;background:#fff!important;color:#203446!important;box-shadow:none!important;font-family:"Microsoft YaHei",ui-sans-serif,sans-serif!important;}
+    div.stButton > button:hover,div.stDownloadButton > button:hover {background:#f4fbfb!important;color:#126b6b!important;transform:none!important;box-shadow:none!important;}
+    [data-testid="stExpander"] {border:1px solid #cbd6df!important;border-radius:3px!important;background:#fff!important;}
+    html,body,[data-testid="stAppViewContainer"] {font-family:"Microsoft YaHei UI","Microsoft YaHei","Noto Sans CJK SC","PingFang SC","Segoe UI",Arial,sans-serif;}
+    code,pre,.ec-context,.ec-number {font-family:"Cascadia Mono","Sarasa Mono SC","Microsoft YaHei UI",monospace;}
+    .ec-context {display:flex;flex-wrap:wrap;gap:.4rem .8rem;align-items:flex-start;padding:.6rem .8rem;border:1px solid #b9c8d3;border-left:4px solid #1f6d8c;background:#fff;color:#314654;font-family:"Cascadia Mono","Microsoft YaHei UI",monospace;font-size:.8rem;line-height:1.45;margin:.35rem 0 .75rem;overflow:visible;}
+    .ec-context strong {color:#173d58;font-size:.92rem;letter-spacing:.07em;}.ec-context span {white-space:normal;overflow-wrap:anywhere;}
+    [data-testid="stMarkdownContainer"],[data-testid="stAlert"],[data-testid="stCaptionContainer"],[data-testid="stExpanderDetails"] {white-space:normal!important;overflow:visible!important;overflow-wrap:anywhere;word-break:normal;}
+    [data-testid="stButton"] button,[data-testid="stDownloadButton"] button {height:auto!important;min-height:2.45rem;white-space:normal!important;overflow-wrap:anywhere;line-height:1.35;}
+    [data-testid="stDataFrame"] {max-width:100%;min-width:0;overflow-x:auto;overflow-y:hidden;}
+    [data-testid="stDataFrame"] * {max-width:100%;text-overflow:clip!important;}
+    [data-testid="stImage"], [data-testid="stImage"] img, [data-testid="stPyplot"] {max-width:100%!important;min-width:0!important;height:auto!important;}
+    [data-testid="stTabs"] {max-width:100%;min-width:0;overflow-x:auto;overflow-y:visible;}
+    [data-testid="stTabs"] button {white-space:normal!important;overflow-wrap:anywhere;min-width:fit-content;}
+    .vc-cell-caption,.vc-state-pill,.vc-mode-note {white-space:normal!important;overflow:visible!important;overflow-wrap:anywhere;}
+    .st-key-workbench_layout,.st-key-workbench_layout * {box-sizing:border-box;}
+    .st-key-workbench_layout [data-testid="stHorizontalBlock"],.st-key-workbench_layout [data-testid="stColumn"] {min-width:0;min-height:0;max-width:100%;}
+    .st-key-workbench_layout [data-testid="stVerticalBlock"] {min-width:0;min-height:0;max-width:100%;}
+    .st-key-workbench_layout [data-testid="stHorizontalBlock"] > * {min-width:0;max-width:100%;}
+    /* 工作台只保留“实验配置 + 结果与证据”两栏。避免第三栏把中文、图例或表格压到框外。 */
+    @media (max-width: 1023px) {
+      .st-key-workbench_layout > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] {flex-wrap:wrap!important;}
+      .st-key-workbench_layout > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {min-width:100%!important;flex:1 0 100%!important;}
+      .ec-context {font-size:.76rem;gap:.3rem .55rem;}
+      [data-testid="stSidebar"] {min-width:0!important;}
+    }
+    /* 展开侧栏会消耗约 300px；1280px 以下直接纵向呈现两栏，避免把左栏压窄。 */
+    @media (max-width: 1279px) {
+      body:has([data-testid="stSidebar"][aria-expanded="true"]) .st-key-workbench_layout > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] {flex-wrap:wrap!important;}
+      body:has([data-testid="stSidebar"][aria-expanded="true"]) .st-key-workbench_layout > [data-testid="stLayoutWrapper"] > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {min-width:100%!important;flex:1 0 100%!important;}
+      .block-container {padding-left:1rem;padding-right:1rem;}
+    }
+    .vc-metric-card,.vc-panel {border-radius:3px!important;box-shadow:none!important;background:#fff!important;}
     </style>
     """,
     unsafe_allow_html=True,
@@ -741,9 +780,10 @@ def update_time_multiplier() -> None:
 
 
 def sidebar() -> None:
-    """显示细胞类型、培养器皿和可校准参数。"""
+    """仅保留全局显示偏好；实验输入位于主工作台左栏。"""
 
-    st.sidebar.header("实验设计")
+    st.sidebar.header("E-CELL 工作台")
+    st.sidebar.caption("全局视图与显示偏好")
     st.sidebar.radio(
         "模拟模式",
         ["细胞培养", "细胞生命活动"],
@@ -751,36 +791,134 @@ def sidebar() -> None:
         help="两个模式共享同一培养环境和模拟时钟。",
     )
     st.sidebar.toggle("减少动态效果", key="reduce_motion", help="关闭气泡、能量脉冲等非必要动画。")
+    st.sidebar.info("实验配置、运行控制与数据分析已移至主工作台。")
+
+
+def render_experiment_context_bar(cell) -> None:
+    """渲染持续可见的实验上下文栏，区分设置、数据和解释状态。"""
+
+    quality = "未导入实测数据"
+    if st.session_state.get("measurement_data") is not None:
+        report = quality_report(st.session_state.measurement_data)
+        quality = "⛔ 格式阻断" if report["blocked"] else ("⚠ 需注意" if report["warnings"] else "✓ 最低条件通过")
+    calibration = "未校准" if not st.session_state.get("coarse_calibration") else "透明初值探索"
+    data_kind = "模拟结果" if st.session_state.get("measurement_data") is None else "模拟 + 实测 CSV"
+    st.markdown(
+        f'''<div class="ec-context" role="status"><strong>E-CELL</strong>
+        <span>模式：{html.escape(st.session_state.app_mode)}</span>
+        <span>细胞系：{html.escape(cell.profile.display_name)}</span>
+        <span>模型：v{MODEL_VERSION}</span><span>t = {cell.time_h:.1f} h</span>
+        <span>数据：{html.escape(data_kind)}</span><span>校准：{html.escape(calibration)}</span>
+        <span>质量：{html.escape(quality)}</span></div>''', unsafe_allow_html=True,
+    )
+
+
+def render_experiment_controls(cell) -> None:
+    """左栏：按基础设置、环境、干预与高级参数组织所有模型输入。"""
+
+    st.markdown("#### 实验配置")
+    st.caption("基础设置 → 培养环境 → 干预 / 事件")
     keys = list(CELL_PROFILES)
     labels = {key: CELL_PROFILES[key].display_name for key in keys}
-    profile_key = st.sidebar.selectbox(
-        "细胞类型", keys, format_func=lambda key: labels[key],
-        index=keys.index(st.session_state.profile_key),
-    )
-    preset_name = st.sidebar.selectbox("实验场景", list(PRESETS))
-    st.sidebar.caption(PRESETS[preset_name]["description"])
-    volume = st.sidebar.number_input("培养液体积（mL）", 0.1, 500.0, 10.0, 0.5)
-    area = st.sidebar.number_input("培养面积（cm²）", 0.1, 500.0, 25.0, 1.0)
-    if st.sidebar.button("创建/重置实验", type="primary", width="stretch"):
+    profile_key = st.selectbox("细胞类型", keys, format_func=lambda key: labels[key], index=keys.index(st.session_state.profile_key))
+    preset_name = st.selectbox("实验场景", list(PRESETS))
+    st.caption(PRESETS[preset_name]["description"])
+    volume = st.number_input("培养液体积（mL）", 0.1, 500.0, cell.culture_volume_ml, 0.5)
+    area = st.number_input("培养面积（cm²）", 0.1, 500.0, cell.surface_area_cm2, 1.0)
+    if st.button("创建/重置实验", type="primary", width="stretch"):
         reset_simulation(profile_key, preset_name, volume, area)
         st.rerun()
 
-    cell = st.session_state.cell
-    p = cell.parameters
-    st.sidebar.subheader("模型校准参数")
-    st.sidebar.caption("以下参数应使用本实验室数据拟合；修改后下一步生效。")
-    p.growth_scale = st.sidebar.slider("生长速率缩放", 0.1, 2.0, p.growth_scale, 0.05)
-    p.uptake_scale = st.sidebar.slider("代谢摄取缩放", 0.1, 3.0, p.uptake_scale, 0.05)
-    p.death_rate_per_h = st.sidebar.number_input(
-        "基础死亡率（1/h）", 0.0, 0.10, p.death_rate_per_h, 0.001, format="%.3f"
-    )
-    p.drug_ic50_um = st.sidebar.number_input(
-        "药物 IC50（µM）", 0.001, 10000.0, p.drug_ic50_um, 1.0
-    )
-    p.drug_hill = st.sidebar.slider("Hill 系数", 0.2, 4.0, p.drug_hill, 0.1)
-    p.oxygen_transfer_per_h = st.sidebar.slider(
-        "氧传递系数（1/h）", 0.01, 2.0, p.oxygen_transfer_per_h, 0.01
-    )
+    st.divider()
+    controls(cell)
+    dish_quick_actions(cell)
+    scheduled_actions_panel()
+    scenario_panel(cell)
+
+    with st.expander("高级模型参数（待校准先验）", expanded=False):
+        p = cell.parameters
+        st.caption("这些参数会影响后续模拟；修改不代表已经完成实验校准。")
+        p.growth_scale = st.slider("生长速率缩放", 0.1, 2.0, p.growth_scale, 0.05)
+        p.uptake_scale = st.slider("代谢摄取缩放", 0.1, 3.0, p.uptake_scale, 0.05)
+        p.death_rate_per_h = st.number_input("基础死亡率（1/h）", 0.0, 0.10, p.death_rate_per_h, 0.001, format="%.3f")
+        p.drug_ic50_um = st.number_input("药物 IC50（µM）", 0.001, 10000.0, p.drug_ic50_um, 1.0)
+        p.drug_hill = st.slider("Hill 系数", 0.2, 4.0, p.drug_hill, 0.1)
+        p.oxygen_transfer_per_h = st.slider("氧传递系数（1/h）", 0.01, 2.0, p.oxygen_transfer_per_h, 0.01)
+
+
+def render_primary_results(cell, measurements: pd.DataFrame | None) -> None:
+    """中栏：主时间序列、紧凑结果表与明确的模型解释边界。"""
+
+    advance_realtime()
+    history = pd.DataFrame(st.session_state.history)
+    st.markdown("#### 模拟结果与时间序列")
+    selected = st.multiselect("主图指标", ["活细胞数", "葡萄糖", "乳酸"], default=["活细胞数", "葡萄糖", "乳酸"], key="primary_plot_fields")
+    mapping = {"活细胞数": ("viable_cells", "cells", "#244c66", "Viable cells"), "葡萄糖": ("glucose_mM", "mM", "#1f8a8a", "Glucose"), "乳酸": ("lactate_mM", "mM", "#b05a3c", "Lactate")}
+    if not selected:
+        selected = ["活细胞数"]
+    figure, axes = plt.subplots(len(selected), 1, figsize=(9, 2.45 * len(selected)), sharex=True)
+    axes = [axes] if len(selected) == 1 else axes
+    for axis, label in zip(axes, selected):
+        field, unit, color, english = mapping[label]
+        axis.plot(history["time_h"], history[field], color=color, linewidth=2, linestyle="-", marker="o", markersize=3, label=f"Simulated {english}")
+        if measurements is not None and field in measurements:
+            axis.scatter(measurements["time_h"], measurements[field], color="#202a33", marker="x", s=36, linewidths=1.5, label=f"Observed {english}")
+        axis.set_ylabel(unit)
+        axis.grid(alpha=.22, linestyle=":")
+        axis.legend(loc="best", fontsize=8)
+    axes[-1].set_xlabel("Time (h)")
+    figure.subplots_adjust(left=.13, right=.97, top=.97, bottom=.11, hspace=.48)
+    st.pyplot(figure)
+    plt.close(figure)
+
+    current, previous = history.iloc[-1], history.iloc[-2] if len(history) > 1 else history.iloc[-1]
+    rows = []
+    for label, (field, unit, _, _) in mapping.items():
+        rows.append({"指标": label, "当前值": f"{current[field]:,.3f}", "相对上一时点变化": f"{current[field] - previous[field]:+.3f}", "单位": unit, "数据状态": "模拟" if measurements is None else "模拟 + 实测对齐"})
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    st.caption(f"解读与限制：实线/圆点为经验模型模拟，黑色 × 为上传实测点；当前模型 v{MODEL_VERSION}，不构成独立实验验证或临床结论。")
+
+
+def render_scientific_status_panel(cell) -> None:
+    """右栏：集中显示结果能否解释的状态、警告、事件与导出。"""
+
+    status, level = cell_status(cell)
+    st.markdown("#### 实验状态与证据")
+    getattr(st, level)(f"当前运行状态：{status}")
+    st.caption(st.session_state.run_message)
+    with st.expander("最近实验事件", expanded=True):
+        events = pd.DataFrame(st.session_state.get("events", []))
+        if events.empty:
+            st.caption("尚无已记录操作。")
+        else:
+            # 右栏是窄可信度面板：不用宽表格承载 ISO 时间戳和详情，避免挤出列边界。
+            # 完整字段仍保留在事件导出/原始数据中，不在此处省略科学或操作含义。
+            for _, item in events.tail(5).iloc[::-1].iterrows():
+                simulation_time = item.get("simulation_time", f"t={item.get('time_h', '?')} h")
+                event_name = item.get("event", "未命名事件")
+                details = item.get("details", "")
+                st.markdown(f"**{html.escape(str(simulation_time))} · {html.escape(str(event_name))}**")
+                if details:
+                    st.caption(str(details))
+    with st.expander("数据质量与校准", expanded=True):
+        measurements = st.session_state.get("measurement_data")
+        if measurements is None:
+            st.info("尚未导入实测 CSV；当前结果仅为模拟。")
+        else:
+            report = quality_report(measurements)
+            for issue, suggestion in report["blocked"] + report["warnings"]:
+                st.warning(f"{issue}：{suggestion}")
+            if not report["blocked"] and not report["warnings"]:
+                st.success("CSV 满足最低格式与建模条件。")
+        result = st.session_state.get("coarse_calibration")
+        if result:
+            st.caption(f"校准候选：growth={result.growth_scale:.1f}；uptake={result.uptake_scale:.1f}")
+            if result.growth_scale in (0.1, 2.0) or result.uptake_scale in (0.1, 3.0):
+                st.warning("最佳参数位于搜索边界，不能解释为可靠校准。")
+    with st.expander("参数证据等级", expanded=False):
+        st.markdown("- **A**：直接来源支持的关系\n- **B**：方向有依据、数值待校准\n- **C**：教学/可视化规则")
+    data = pd.DataFrame(st.session_state.history)
+    st.download_button("导出当前模拟 CSV", data.to_csv(index=False).encode("utf-8-sig"), f"{cell.profile_key}_culture_{MODEL_VERSION}_{cell.time_h:.1f}h.csv", "text/csv", key="workbench_export_csv")
 
 
 def show_profile(cell) -> None:
@@ -1218,6 +1356,7 @@ def measurement_data_panel(cell, history) -> pd.DataFrame | None:
         except (ValueError, pd.errors.ParserError) as error:
             st.error(f"无法读取实测数据：{error}")
             return None
+        st.session_state.measurement_data = measurements
         for note in notes:
             st.caption(note)
         report = quality_report(measurements)
@@ -1331,6 +1470,47 @@ def measurement_data_panel(cell, history) -> pd.DataFrame | None:
                 save_runtime_state()
                 st.rerun()
         return measurements
+
+
+def render_analysis_workspace(cell) -> None:
+    """下方工作区：把次级分析从主时间序列画布中收纳出来。"""
+
+    st.divider()
+    tabs = st.tabs(["实测 CSV 对齐", "透明粗校准", "参数敏感性", "参数来源与模型边界", "教学与机制探索"])
+    with tabs[0]:
+        measurements = measurement_data_panel(cell, st.session_state.history)
+        if measurements is not None:
+            comparison = comparison_frame(pd.DataFrame(st.session_state.history), measurements)
+            st.markdown("**模拟—实测残差摘要**")
+            st.dataframe(residual_summary(comparison).style.format({"MAE": "{:.4g}", "RMSE": "{:.4g}"}), hide_index=True, width="stretch")
+    with tabs[1]:
+        st.caption("透明网格搜索仅探索 growth_scale 与 uptake_scale 的参数初值；不是黑箱优化、统计推断或置信区间。")
+        measurements = st.session_state.get("measurement_data")
+        if measurements is not None and quality_report(measurements)["is_minimum_model_ready"]:
+            if st.button("运行透明两参数粗校准", key="run_workbench_calibration"):
+                with st.spinner("正在搜索透明网格…"):
+                    st.session_state.coarse_calibration = fit_growth_and_uptake(cell, st.session_state.history, measurements)
+                st.rerun()
+        else:
+            st.info("请先在“实测 CSV 对齐”标签中导入满足最低建模条件的实测数据。")
+        result = st.session_state.get("coarse_calibration")
+        if result is None:
+            st.info("尚无粗校准结果。此模块不使用黑箱优化器，也不提供置信区间。")
+        else:
+            st.success(f"当前候选：growth_scale={result.growth_scale:.1f}；uptake_scale={result.uptake_scale:.1f}。请结合训练/留出误差与边界警告解释。")
+            grid = pd.DataFrame(result.grid_scores or [])
+            if not grid.empty:
+                st.dataframe(grid.nsmallest(10, "normalized_rmse"), hide_index=True, width="stretch")
+    with tabs[2]:
+        sensitivity_analysis_panel(cell)
+    with tabs[3]:
+        references(cell)
+        experiment_quality_panel()
+        with st.expander("模型方程和校准说明", expanded=False):
+            st.markdown("A：直接支持的关系；B：文献方向支持、数值待校准；C：教学规则。模型是贴壁细胞培养条件探索的经验原型，不能替代湿实验、定量检测或临床判断。")
+    with tabs[4]:
+        st.warning("教学与机制探索：细胞器及细胞内读数为相对功能指数，仅用于教学与机制探索。")
+        st.caption("切换左侧“模拟模式”为“细胞生命活动”可进入细胞器地图、CellDex、虚拟读板和机制探索工具；这些工具不输出真实细胞器定量测量。")
 
 
 def scenario_panel(cell) -> None:
@@ -1544,7 +1724,7 @@ def _intracellular_svg_fallback(state: IntracellularState) -> None:
     cell_html = f"""
     <style>
       html,body {{margin:0;padding:0;background:transparent;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;}}
-      .vc-cell-map {{width:calc(100% - 2px);box-sizing:border-box;margin:0 auto .65rem;padding:.55rem;overflow:hidden;border:1px solid rgba(91,142,162,.32);border-radius:1.1rem;background:linear-gradient(145deg,#f9fdff 0%,#eef8fb 58%,#f6f2ff 100%);box-shadow:0 10px 25px rgba(45,91,112,.1),inset 0 1px 0 #fff;}}
+      .vc-cell-map {{width:calc(100% - 2px);box-sizing:border-box;margin:0 auto .65rem;padding:.55rem;overflow-x:auto;overflow-y:visible;border:1px solid rgba(91,142,162,.32);border-radius:1.1rem;background:linear-gradient(145deg,#f9fdff 0%,#eef8fb 58%,#f6f2ff 100%);box-shadow:0 10px 25px rgba(45,91,112,.1),inset 0 1px 0 #fff;}}
       .vc-cell-map svg {{display:block;width:100%;height:auto;}}
       .vc-cell-caption {{display:flex;justify-content:space-between;gap:.8rem;align-items:center;padding:.15rem .5rem .3rem;color:#4b6672;font-size:.78rem;}}
       .vc-state-ribbon {{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.45rem;}}
@@ -1844,14 +2024,14 @@ def intracellular_map(state: IntracellularState) -> None:
     <style>
       html,body {{margin:0;padding:0;background:transparent;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#eaf8ff}}
       * {{box-sizing:border-box}}
-      .atlas-card {{width:100%;padding:10px;border:1px solid #cce1ea;border-radius:18px;background:linear-gradient(145deg,#f8fdff,#eef7fb 58%,#f6f1ff);box-shadow:0 12px 30px rgba(34,75,98,.13)}}
-      .cell-stage {{position:relative;width:100%;aspect-ratio:3/2;overflow:hidden;border-radius:14px;background:#103e4c;box-shadow:inset 0 0 42px rgba(233,86,114,{alert_strength * .45:.2f})}}
+      .atlas-card {{width:100%;padding:10px;border:1px solid #cce1ea;border-radius:18px;background:linear-gradient(145deg,#f8fdff,#eef7fb 58%,#f6f1ff);box-shadow:0 12px 30px rgba(34,75,98,.13);overflow:visible}}
+      .cell-stage {{position:relative;width:100%;aspect-ratio:3/2;overflow:visible;border-radius:14px;background:#103e4c;box-shadow:inset 0 0 42px rgba(233,86,114,{alert_strength * .45:.2f})}}
       .cell-stage>img {{display:block;width:100%;height:100%;object-fit:cover}}
       .cell-stage::after {{content:"";position:absolute;inset:0;pointer-events:none;border:2px solid {apoptosis_color};border-radius:14px;opacity:{.18 + alert_strength * .62:.2f};box-shadow:inset 0 0 {12 + alert_strength * 28:.0f}px {apoptosis_color}}}
-      .tag {{position:absolute;z-index:4;min-width:88px;padding:5px 8px;border:1px solid rgba(255,255,255,.45);border-radius:8px;background:rgba(7,31,48,.74);box-shadow:0 4px 13px rgba(0,18,32,.28);backdrop-filter:blur(5px);font-size:clamp(9px,1.15vw,13px);line-height:1.22;text-shadow:0 1px 2px #001}}
+      .tag {{position:absolute;z-index:4;min-width:88px;max-width:30%;padding:5px 8px;border:1px solid rgba(255,255,255,.45);border-radius:8px;background:rgba(7,31,48,.74);box-shadow:0 4px 13px rgba(0,18,32,.28);backdrop-filter:blur(5px);font-size:clamp(9px,1.15vw,13px);line-height:1.28;text-shadow:0 1px 2px #001;white-space:normal;overflow-wrap:anywhere}}
       .tag.focus {{border-color:#f6df74;box-shadow:0 0 0 2px rgba(246,223,116,.38),0 0 20px rgba(246,223,116,.72);animation:focusPulse 1.15s ease-in-out infinite}}
       .tag b {{display:block;font-size:1.05em;color:#fff}}
-      .tag small {{display:block;margin-top:2px;color:var(--signal,#bfeef5);white-space:nowrap}}
+      .tag small {{display:block;margin-top:2px;color:var(--signal,#bfeef5);white-space:normal;overflow-wrap:anywhere}}
       .tag::after {{content:"";position:absolute;width:28px;border-top:1px solid rgba(255,255,255,.72);transform-origin:left center}}
       .nucleus {{left:35%;top:38%;--signal:{dna_color}}} .nucleus::after {{left:100%;top:50%;transform:rotate(-18deg)}}
       .mitochondria {{right:4%;top:15%;--signal:{mito_color}}} .mitochondria::after {{right:100%;top:50%;transform:rotate(165deg)}}
@@ -2373,9 +2553,9 @@ if st.session_state.get("reduce_motion"):
     st.markdown("<style>*,*::before,*::after{animation:none!important;transition:none!important;}</style>", unsafe_allow_html=True)
 
 st.title("e-cell")
-st.caption(f"贴壁细胞培养条件探索 · 文献驱动经验动力学研究原型 · 模型版本 {MODEL_VERSION}")
-st.error("研究原型：支持假设探索和实验设计讨论；尚未完成独立验证，不能替代湿实验、定量检测或临床判断。")
-pixel_lab_scene(cell)
+st.caption("贴壁细胞培养条件探索 · 文献驱动的经验动力学研究原型")
+render_experiment_context_bar(cell)
+st.info("研究原型：支持假设探索和实验设计讨论；尚未完成独立验证，不能替代湿实验、定量检测或临床判断。")
 
 pending_toast = st.session_state.pop("pending_toast", None)
 if pending_toast:
@@ -2383,18 +2563,16 @@ if pending_toast:
     st.toast(message, icon=icon)
 
 if st.session_state.app_mode == "细胞培养":
-    show_profile(cell)
-    experiment_quality_panel()
-    live_status_panel()
-    controls(cell)
-    scheduled_actions_panel()
-    scenario_panel(cell)
-    st.subheader("培养动力学曲线")
-    measurements = measurement_data_panel(cell, st.session_state.history)
-    plot_history(st.session_state.history, measurements)
-    sensitivity_analysis_panel(cell)
+    with st.container(key="workbench_layout"):
+        left_column, main_column = st.columns([1.0, 2.3], gap="medium")
+        with left_column:
+            render_experiment_controls(cell)
+        with main_column:
+            render_primary_results(cell, st.session_state.get("measurement_data"))
+            st.divider()
+            render_scientific_status_panel(cell)
+    render_analysis_workspace(cell)
     data = pd.DataFrame(st.session_state.history)
-    st.subheader("实验数据与导出")
     export_name = f"{cell.profile_key}_culture_{MODEL_VERSION}_{cell.time_h:.1f}h.csv"
 else:
     st.markdown(
@@ -2403,40 +2581,21 @@ else:
         '两个模式使用同一个时钟。</div>',
         unsafe_allow_html=True,
     )
-    intracellular_live_panel()
-    observability_panel()
-    controls(cell)
-    scheduled_actions_panel()
+    with st.container(key="workbench_layout"):
+        left_column, main_column = st.columns([1.0, 2.3], gap="medium")
+        with left_column:
+            render_experiment_controls(cell)
+        with main_column:
+            intracellular_live_panel()
+            observability_panel()
+            st.divider()
+            render_scientific_status_panel(cell)
     st.subheader("细胞内部状态曲线")
     plot_intracellular_history(st.session_state.intracellular_history)
     data = pd.DataFrame(st.session_state.intracellular_history)
-    st.subheader("细胞内部数据与导出")
     export_name = f"{cell.profile_key}_intracellular_{MODEL_VERSION}_{cell.time_h:.1f}h.csv"
 
-st.download_button(
-    "下载带单位的 CSV",
-    data=data.to_csv(index=False).encode("utf-8-sig"),
-    file_name=export_name,
-    mime="text/csv",
-)
-with st.expander("查看原始数据"):
-    st.dataframe(data, hide_index=True, width="stretch")
-
-event_timeline_panel()
-
-references(cell)
-
-with st.expander("模型方程和校准说明"):
-    st.markdown(
-        """
-        - **A 直接支持**：最大比生长率换算 `μmax = ln(2) / doubling_time`；药物使用
-          Hill/IC50 浓度—效应形式；细胞库提供的培养条件和指定倍增时间。
-        - **B 文献推断·待校准**：葡萄糖/谷氨酰胺/氧采用饱和项，pH、温度、渗透压、
-          乳酸和汇合度采用经验修正。方向有依据，但曲线形状、阈值及乘法组合不是直接测量结果。
-        - **C 演示规则**：死亡阈值、药物默认衰减、细胞内状态权重、状态颜色阈值和周期阶段占比。
-        - 葡萄糖消耗与乳酸生成使用细胞特异性先验，并按细胞数、体积和时间积分。
-        - 细胞内部百分比是相对功能指数，不是 ATP 浓度、膜电位 mV、自噬通量或损伤灶计数。
-        - 建议用至少 3 个生物学重复、多个时间点的细胞数、存活率、葡萄糖和乳酸数据拟合参数，
-          再用独立实验批次验证预测误差。
-        """
-    )
+if st.session_state.app_mode == "细胞生命活动":
+    st.download_button("下载带单位的 CSV", data=data.to_csv(index=False).encode("utf-8-sig"), file_name=export_name, mime="text/csv")
+    with st.expander("查看原始数据"):
+        st.dataframe(data, hide_index=True, width="stretch")
