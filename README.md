@@ -9,7 +9,7 @@
 | ![细胞培养模式](assets/screenshots/culture-mode.png) | ![细胞生命活动模式](assets/screenshots/cell-life-mode.png) |
 | 配置培养条件、推进模拟、对齐实测 CSV 与导出。 | 代表性细胞的相对状态与机制探索视图。 |
 
-**Online demo：** 待部署。仓库当前没有可核验的公开 Demo 地址。
+**Online demo：** [打开公开 Demo](https://virtual-cell-simulator-fdnviedwcau9avnk8e69j9.streamlit.app/)。该站点展示研究原型与教学合成数据，不代表独立实验验证。
 
 ## 30 秒启动 / Quick start
 

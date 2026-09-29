@@ -2,6 +2,10 @@
 
 本项目采用语义化版本；科学结果相关变更按 `MODEL_CARD.md` 的 patch/minor/major 原则记录。
 
+## Unreleased
+
+- 将公开 Streamlit Community Cloud Demo 固定为 Python 3.12 运行环境，并在 README 与部署文档中记录其实际地址和配置。
+
 ## 1.0.1 — 2026-09-28
 
 - 修正教学性细胞内 ROS 规则：不再将较低氧设定值直接编码为 ROS 必然单调升高。

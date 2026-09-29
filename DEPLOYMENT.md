@@ -29,10 +29,15 @@ streamlit run app.py
 
 ## Streamlit Community Cloud
 
-1. 将仓库推送到 GitHub，且确保根目录包含 `app.py`、`requirements.txt` 与 `assets/`。
-2. 在 <https://share.streamlit.io/> 使用 GitHub 账户创建应用。
-3. 选择此仓库和要部署的分支，入口文件填写 `app.py`，然后部署。
-4. 在生成的应用日志中确认依赖安装和启动成功，再把实际 URL 更新到 README 顶部的 Demo 链接位置。
+当前公开 Demo：[virtual-cell-simulator-fdnviedwcau9avnk8e69j9.streamlit.app](https://virtual-cell-simulator-fdnviedwcau9avnk8e69j9.streamlit.app/)。
+
+- 平台：Streamlit Community Cloud
+- 仓库：`umasouno2007-design/virtual-cell-simulator`
+- 分支：`main`
+- 入口：`app.py`
+- Python：3.12
+
+后续部署时，确认根目录包含 `app.py`、`requirements.txt` 与 `assets/`，并在构建日志中确认依赖安装和启动成功。不要将账号凭据、密钥或私有数据写入仓库或部署设置。
 
 ## 部署前检查
 
