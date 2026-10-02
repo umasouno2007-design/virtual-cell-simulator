@@ -83,6 +83,29 @@ class CellCultureTestCase(unittest.TestCase):
         self.assertEqual(len(history), 13)
         self.assertAlmostEqual(cell.time_h, 6.0)
 
+    def test_run_steps_rejects_non_progressing_or_truncated_step(self) -> None:
+        cell, history = new_simulation("a549")
+        for invalid in (0.0, -1.0, 7.0, float("nan"), float("inf")):
+            with self.subTest(dt_h=invalid):
+                with self.assertRaisesRegex(ValueError, "每步时长"):
+                    run_steps(cell, history, 1, invalid)
+        self.assertEqual(len(history), 1)
+        self.assertEqual(cell.time_h, 0.0)
+
+    def test_nonfinite_culture_actions_leave_state_unchanged(self) -> None:
+        cell = CellCulture("hela")
+        before = cell.snapshot()
+        actions = (
+            (cell.exchange_medium, float("nan")),
+            (cell.add_drug, float("inf")),
+            (cell.add_glucose, float("nan")),
+        )
+        for action, invalid in actions:
+            with self.subTest(action=action.__name__):
+                with self.assertRaisesRegex(ValueError, "有限数值"):
+                    action(invalid)
+        self.assertEqual(cell.snapshot(), before)
+
     def test_invalid_initial_values_and_state_do_not_create_nonfinite_snapshot(self) -> None:
         cell = CellCulture("hela", culture_volume_ml=-1, surface_area_cm2=float("nan"), viable_cells=-5)
         self.assertEqual(cell.viable_cells, 0.0)

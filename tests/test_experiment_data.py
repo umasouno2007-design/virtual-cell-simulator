@@ -100,6 +100,13 @@ class ExperimentDataTestCase(unittest.TestCase):
         comparison = comparison_frame(simulation, observed)
         self.assertEqual(comparison.loc[0, "glucose_mM_simulated"], 6.0)
 
+    def test_comparison_does_not_extrapolate_beyond_simulation_history(self) -> None:
+        simulation = pd.DataFrame({"time_h": [0.0, 24.0], "viable_cells": [100.0, 200.0]})
+        observed = pd.DataFrame({"time_h": [12.0, 48.0], "viable_cells": [140.0, 300.0]})
+        comparison = comparison_frame(simulation, observed)
+        self.assertEqual(comparison.loc[0, "viable_cells_simulated"], 150.0)
+        self.assertTrue(pd.isna(comparison.loc[1, "viable_cells_simulated"]))
+
 
 if __name__ == "__main__":
     unittest.main()

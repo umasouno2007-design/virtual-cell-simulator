@@ -64,6 +64,15 @@ class CalibrationTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "非有限"):
             fit_growth_and_uptake(cell, [cell.snapshot()], measurements)
 
+    def test_direct_grid_search_rejects_duplicate_measurement_time(self) -> None:
+        cell = CellCulture("hela")
+        measurements = pd.DataFrame({
+            "time_h": [0.0, 24.0, 24.0],
+            "viable_cells": [100.0, 150.0, 180.0],
+        })
+        with self.assertRaisesRegex(ValueError, "重复加权"):
+            fit_growth_and_uptake(cell, [cell.snapshot()], measurements)
+
     def test_non_finite_observation_is_rejected(self) -> None:
         cell = CellCulture("hela")
         measurements = pd.DataFrame({
@@ -83,6 +92,22 @@ class CalibrationTestCase(unittest.TestCase):
         cell_only = _score(comparison, {"viable_cells": 1.0, "glucose_mM": 0.0, "lactate_mM": 0.0})
         zero_glucose = _score(comparison, {"viable_cells": 1.0, "glucose_mM": 0.0})
         self.assertAlmostEqual(cell_only, zero_glucose)
+
+    def test_score_rejects_uncovered_observations_instead_of_ignoring_them(self) -> None:
+        comparison = pd.DataFrame({
+            "viable_cells_observed": [100.0, 200.0],
+            "viable_cells_residual": [0.0, float("nan")],
+        })
+        self.assertEqual(_score(comparison), float("inf"))
+
+    def test_score_ignores_ineligible_single_point_metric(self) -> None:
+        comparison = pd.DataFrame({
+            "viable_cells_observed": [100.0, 200.0],
+            "viable_cells_residual": [0.0, 10.0],
+            "glucose_mM_observed": [5.0, float("nan")],
+            "glucose_mM_residual": [float("nan"), float("nan")],
+        })
+        self.assertLess(_score(comparison), float("inf"))
 
     def test_all_zero_eligible_weights_are_rejected(self) -> None:
         cell = CellCulture("hela")

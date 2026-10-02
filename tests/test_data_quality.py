@@ -47,3 +47,14 @@ class DataQualityTests(unittest.TestCase):
             "time_h": [0, 24, 48], "pH": [7.2, 7.4, 15], "viable_cells": [1, 2, 3],
         }))
         self.assertTrue(any("pH 超出" in item[0] for item in high_ph["blocked"]))
+
+    def test_oxygen_saturation_percent_is_not_silently_compared_as_model_proxy(self):
+        saturation = quality_report(pd.DataFrame({
+            "time_h": [0, 24, 48], "oxygen_percent": [80, 75, 70], "viable_cells": [1, 2, 3],
+        }))
+        self.assertTrue(any("超过模型 0–21%" in issue for issue, _ in saturation["blocked"]))
+
+        within_range = quality_report(pd.DataFrame({
+            "time_h": [0, 24, 48], "oxygen_percent": [18, 17, 16], "viable_cells": [1, 2, 3],
+        }))
+        self.assertTrue(any("氧列需要单独核对" in issue for issue, _ in within_range["warnings"]))

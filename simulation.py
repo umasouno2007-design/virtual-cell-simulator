@@ -1,5 +1,6 @@
 """模拟控制、实验场景与状态判定。"""
 
+from math import isfinite
 from typing import Dict, List
 
 from cell import CellCulture, ModelParameters
@@ -60,11 +61,17 @@ def run_steps(
 ) -> int:
     """推进指定步数；每步记录一次带单位的数据。"""
 
+    try:
+        step_hours = float(dt_h)
+    except (TypeError, ValueError):
+        raise ValueError("每步时长必须是 0–6 h 内的有限正数。") from None
+    if not isfinite(step_hours) or not 0 < step_hours <= 6.0:
+        raise ValueError("每步时长必须是 0–6 h 内的有限正数。")
     completed = 0
     for _ in range(max(0, int(steps))):
         if not cell.alive:
             break
-        cell.step(dt_h)
+        cell.step(step_hours)
         history.append(cell.snapshot())
         completed += 1
     return completed

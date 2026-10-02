@@ -17,6 +17,18 @@ def _finite_nonnegative(value: float, fallback: float = 0.0) -> float:
     return number if isfinite(number) and number >= 0.0 else fallback
 
 
+def _finite_action_amount(value: float, label: str) -> float:
+    """Reject non-finite user actions before they can enter an exported snapshot."""
+
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{label}必须是有限数值。") from None
+    if not isfinite(amount):
+        raise ValueError(f"{label}必须是有限数值。")
+    return max(0.0, amount)
+
+
 @dataclass
 class ModelParameters:
     """可由实验数据拟合的模型参数。
@@ -228,7 +240,7 @@ class CellCulture:
     def exchange_medium(self, fraction: float = 1.0) -> None:
         """更换指定比例培养基，1.0 表示全量换液。"""
 
-        fraction = max(0.0, min(1.0, fraction))
+        fraction = min(1.0, _finite_action_amount(fraction, "换液比例"))
         self.glucose_mm += (self.profile.initial_glucose_mm - self.glucose_mm) * fraction
         self.glutamine_mm += (self.profile.initial_glutamine_mm - self.glutamine_mm) * fraction
         self.lactate_mm *= 1.0 - fraction
@@ -239,14 +251,14 @@ class CellCulture:
     def add_drug(self, concentration_um: float) -> None:
         """设置药物浓度；药物效应取决于用户提供的 IC50/Hill 参数。"""
 
-        self.drug_um = max(0.0, float(concentration_um))
+        self.drug_um = _finite_action_amount(concentration_um, "药物浓度")
 
     def add_glucose(self, concentration_increase_mm: float) -> None:
         """按培养液终浓度增量补充葡萄糖。"""
 
         self.glucose_mm = min(
             100.0,
-            self.glucose_mm + max(0.0, float(concentration_increase_mm)),
+            self.glucose_mm + _finite_action_amount(concentration_increase_mm, "葡萄糖补充量"),
         )
 
     def snapshot(self) -> Dict[str, float | str]:

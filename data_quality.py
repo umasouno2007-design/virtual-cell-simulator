@@ -67,6 +67,16 @@ def quality_report(data: pd.DataFrame) -> dict:
         blocked.append(("存活率超过 100%", "请确认使用百分比而非比例，并核对导入单位。"))
     if "oxygen_percent" in data and (pd.to_numeric(data["oxygen_percent"], errors="coerce").dropna() > 100).any():
         blocked.append(("氧百分比超过 100%", "核对该列是否实际使用饱和度、分压或其他单位。"))
+    elif "oxygen_percent" in data and (pd.to_numeric(data["oxygen_percent"], errors="coerce").dropna() > 21).any():
+        blocked.append((
+            "氧代理值超过模型 0–21% 范围",
+            "本列对应培养模型的局部氧可用性代理；溶氧饱和度 %、分压或培养箱设定值不能直接当作相同观测量。请核对来源与换算依据。",
+        ))
+    if "oxygen_percent" in data and data["oxygen_percent"].notna().any():
+        warnings.append((
+            "氧列需要单独核对测量定义",
+            "即使在 0–21% 范围内，模型氧代理也不自动等同于实测溶氧、氧分压或培养箱头空间氧。",
+        ))
     if "pH" in data and (pd.to_numeric(data["pH"], errors="coerce").dropna() > 14).any():
         blocked.append(("pH 超出 0–14 的常规标度", "核对 CSV 中的酸碱指标单位与列映射。"))
     available = [field for field in ("viable_cells", "glucose_mM", "lactate_mM") if field in data and data[field].notna().sum() >= 2]

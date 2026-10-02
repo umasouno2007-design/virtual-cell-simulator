@@ -1659,6 +1659,17 @@ def measurement_data_panel(cell, history) -> pd.DataFrame | None:
             return None
         st.dataframe(measurements, hide_index=True, width="stretch")
         comparison = comparison_frame(pd.DataFrame(history), measurements)
+        for field in observed_fields(measurements):
+            observed_column = f"{field}_observed"
+            simulated_column = f"{field}_simulated"
+            if observed_column not in comparison or simulated_column not in comparison:
+                continue
+            uncovered = int((comparison[observed_column].notna() & comparison[simulated_column].isna()).sum())
+            if uncovered:
+                st.warning(
+                    f"{FIELD_LABELS[field]}有 {uncovered} 个实测点不在当前模拟轨迹的可对齐范围内；"
+                    "这些点不会进入下方 MAE/RMSE。请先推进模拟或核对时间原点；不会外推模型结果。"
+                )
         st.markdown("**模拟—实测残差（模拟值 − 实测值）**")
         st.dataframe(
             residual_summary(comparison).style.format({"MAE": "{:.4g}", "RMSE": "{:.4g}"}),

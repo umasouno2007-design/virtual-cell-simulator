@@ -73,15 +73,20 @@ def _score(comparison: pd.DataFrame, weights: dict[str, float] | None = None) ->
         residual = f"{field}_residual"
         if observed not in comparison or residual not in comparison:
             continue
-        values = comparison[[observed, residual]].dropna()
-        if len(values) < 2:
-            continue
-        scale = max(float(values[observed].abs().max()), float(values[observed].max() - values[observed].min()), 1.0)
         weight = float((weights or {}).get(field, 1.0))
         if not isfinite(weight) or weight < 0:
             raise ValueError("校准指标权重必须是有限的非负数。")
         if weight == 0:
             continue
+        if comparison[observed].notna().sum() < 2:
+            continue
+        # 观测点若落在重演轨迹之外，不能靠丢弃这些残差得到虚假的低误差。
+        if (comparison[observed].notna() & comparison[residual].isna()).any():
+            return float("inf")
+        values = comparison[[observed, residual]].dropna()
+        if len(values) < 2:
+            continue
+        scale = max(float(values[observed].abs().max()), float(values[observed].max() - values[observed].min()), 1.0)
         normalized_squared = (values[residual] / scale).pow(2)
         weighted_squared_error += float((normalized_squared * weight).sum())
         total_weight += weight * len(normalized_squared)
@@ -143,6 +148,8 @@ def fit_growth_and_uptake(
         raise ValueError("粗校准时间列包含缺失或非有限值，无法与模拟时间轴对齐。")
     if (measurement_times < 0).any():
         raise ValueError("粗校准时间不能为负值；请使用从实验起点开始的小时数。")
+    if measurement_times.duplicated().any():
+        raise ValueError("粗校准时间点重复；请先核对原始记录并显式生成标准化副本，避免同一时刻被重复加权。")
     if (measurement_times < initial_time).any():
         raise ValueError(
             f"有实测时间早于模拟历史起点（{initial_time:g} h）；"

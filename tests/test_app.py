@@ -265,6 +265,18 @@ class AppStateTestCase(unittest.TestCase):
         self.assertTrue(result.holdout_metrics)
         self.assertEqual(len(app.exception), 0)
 
+    def test_measurement_alignment_warns_when_simulation_has_not_reached_observations(self) -> None:
+        app_path = Path(__file__).resolve().parents[1] / "app.py"
+        app = AppTest.from_file(app_path).run(timeout=30)
+        self._set_mode(app, "培养环境与数据工作流")
+        next(item for item in app.file_uploader if item.label == "选择实测 CSV").upload(
+            "observations.csv",
+            b"time_h,viable_cells\n0,250000\n24,280000\n48,315000\n",
+            "text/csv",
+        ).run(timeout=30)
+        self.assertTrue(any("不在当前模拟轨迹" in item.value for item in app.warning))
+        self.assertEqual(len(app.exception), 0)
+
     def test_measurement_dataset_replacement_and_explicit_removal_clear_stale_calibration(self) -> None:
         app_path = Path(__file__).resolve().parents[1] / "app.py"
         app = AppTest.from_file(app_path).run(timeout=30)
