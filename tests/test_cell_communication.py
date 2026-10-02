@@ -38,6 +38,16 @@ class CellCommunicationTests(unittest.TestCase):
         state.step(calm, 1.0)
         self.assertLess(state.stress_signal_index, 90.0)
 
+    def test_invalid_time_step_does_not_advance_communication_state(self) -> None:
+        state = CellCommunicationState()
+        before = state.snapshot()
+        for invalid in (-1.0, 25.0, float("nan"), float("inf"), None, True):
+            with self.subTest(dt_h=invalid):
+                with self.assertRaisesRegex(ValueError, "时间步长"):
+                    state.step(IntracellularState(), invalid)
+        state.step(IntracellularState(), 0.0)
+        self.assertEqual(state.snapshot(), before)
+
     def test_response_and_proportions_remain_bounded(self) -> None:
         state = CellCommunicationState()
         stress = self.stressed_state()

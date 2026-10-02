@@ -88,7 +88,13 @@ def simulate_one_factor(cell: CellCulture, parameter_key: str, horizon_h: float 
 
     if parameter_key not in SENSITIVITY_PARAMETERS:
         raise ValueError(f"未知敏感性参数：{parameter_key}")
-    if not isfinite(horizon_h) or not 0 < horizon_h <= 168:
+    if isinstance(horizon_h, bool):
+        raise ValueError("分析时长必须是 0–168 h 内的有限正数。")
+    try:
+        horizon = float(horizon_h)
+    except (TypeError, ValueError):
+        raise ValueError("分析时长必须是 0–168 h 内的有限正数。") from None
+    if not isfinite(horizon) or not 0 < horizon <= 168:
         raise ValueError("分析时长必须是 0–168 h 内的有限正数。")
     definition = SENSITIVITY_PARAMETERS[parameter_key]
     rows: list[dict] = []
@@ -96,7 +102,7 @@ def simulate_one_factor(cell: CellCulture, parameter_key: str, horizon_h: float 
         trial = _clone(cell)
         _apply_scenario(trial, parameter_key, factor)
         rows.append({"parameter": parameter_key, "parameter_label": definition.label, "scenario": scenario, "factor": factor, **trial.snapshot()})
-        remaining = float(horizon_h)
+        remaining = horizon
         while trial.alive and remaining > 1e-9:
             dt = min(1.0, remaining)
             trial.step(dt)

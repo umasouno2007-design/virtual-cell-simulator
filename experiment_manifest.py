@@ -1,5 +1,6 @@
 """生成紧凑、可共享的实验配置快照。"""
 
+from copy import deepcopy
 from dataclasses import asdict
 from datetime import datetime, timezone
 
@@ -51,8 +52,8 @@ def build_manifest(
             "first_time_h": history[0].get("time_h") if history else None,
             "last_time_h": history[-1].get("time_h") if history else None,
         },
-        "events": events,
-        "scheduled_actions": scheduled_actions or [],
-        "experiment_metadata": experiment_metadata or {},
+        "events": deepcopy(events),
+        "scheduled_actions": deepcopy(scheduled_actions or []),
+        "experiment_metadata": deepcopy(experiment_metadata or {}),
         "limitations": "这是配置快照，不是经过实验验证的模型参数，也不包含原始实测文件。",
     }

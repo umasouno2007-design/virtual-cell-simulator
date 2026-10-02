@@ -85,4 +85,6 @@ class MicroenvironmentState:
             "temperature_C": self.temperature_c,
             "drug_uM": self.drug_um,
             "local_confluence_percent": self.local_confluence_percent,
+            "doubling_time_h": self.doubling_time_h,
+            "drug_ic50_uM": self.drug_ic50_um,
         }

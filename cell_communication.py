@@ -53,8 +53,15 @@ class CellCommunicationState:
         有界的教学性反馈，且不会改变主培养动力学 ``CellCulture``。
         """
 
-        dt_h = max(0.0, min(float(dt_h), 24.0))
-        if dt_h <= 0.0:
+        if isinstance(dt_h, bool):
+            raise ValueError("通信层时间步长必须是 0–24 h 内的有限数值。")
+        try:
+            dt_h = float(dt_h)
+        except (TypeError, ValueError):
+            raise ValueError("通信层时间步长必须是 0–24 h 内的有限数值。") from None
+        if not isfinite(dt_h) or dt_h < 0.0 or dt_h > 24.0:
+            raise ValueError("通信层时间步长必须是 0–24 h 内的有限数值。")
+        if dt_h == 0.0:
             return
 
         # 只复用既有状态：较高 ROS/ER/凋亡及较低 ATP 共同提高子群压力驱动。

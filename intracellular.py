@@ -24,6 +24,20 @@ def _bounded(value: float, low: float = 0.0, high: float = 100.0) -> float:
     return max(low, min(high, numeric)) if isfinite(numeric) else low
 
 
+def _teaching_intensity(value: float) -> float:
+    """Validate a relative teaching pulse, not an experimental dose."""
+
+    if isinstance(value, bool):
+        raise ValueError("教学干预强度必须是有限非负数。")
+    try:
+        intensity = float(value)
+    except (TypeError, ValueError):
+        raise ValueError("教学干预强度必须是有限非负数。") from None
+    if not isfinite(intensity) or intensity < 0:
+        raise ValueError("教学干预强度必须是有限非负数。")
+    return intensity
+
+
 @dataclass
 class IntracellularState:
     """单个代表性细胞的相对功能状态，不是实验测量或细胞比例。"""
@@ -153,12 +167,14 @@ class IntracellularState:
     def apply_oxidative_stress(self, intensity: float = 20.0) -> None:
         """施加一次教学性氧化压力脉冲，便于观察相对状态的下游趋势。"""
 
+        intensity = _teaching_intensity(intensity)
         self.ros_percent = _bounded(self.ros_percent + intensity)
         self.dna_damage_percent = _bounded(self.dna_damage_percent + intensity * 0.12)
 
     def apply_antioxidant_response(self, intensity: float = 15.0) -> None:
         """模拟增强抗氧化清除能力；既有 DNA 损伤代理仍需随时间恢复。"""
 
+        intensity = _teaching_intensity(intensity)
         self.ros_percent = _bounded(self.ros_percent - intensity)
 
     def snapshot(self) -> Dict[str, float | str]:

@@ -37,7 +37,10 @@ class CellScenarioTests(unittest.TestCase):
         self.assertEqual(row["time_h"], 12.0)
         self.assertEqual(row["local_oxygen_availability"], 0.35)
         self.assertEqual(row["glucose_mM"], 2.1)
+        self.assertEqual(row["doubling_time_h"], environment.doubling_time_h)
+        self.assertEqual(row["drug_ic50_uM"], environment.drug_ic50_um)
         self.assertTrue(row["environment_recorded"])
+        self.assertTrue(row["environment_inputs_complete"])
         self.assertNotIn("local_oxygen_availability", state.snapshot())
 
     def test_traceability_export_marks_legacy_environment_as_not_recorded(self):
@@ -45,7 +48,9 @@ class CellScenarioTests(unittest.TestCase):
         new_row = single_cell_history_row(IntracellularState(), MicroenvironmentState())
         exported = add_traceability_fields([old_row, new_row], evidence_level="B/C")
         self.assertFalse(exported[0]["environment_recorded"])
+        self.assertFalse(exported[0]["environment_inputs_complete"])
         self.assertTrue(exported[1]["environment_recorded"])
+        self.assertTrue(exported[1]["environment_inputs_complete"])
         self.assertTrue(all(item["model_version"] for item in exported))
         self.assertTrue(all(item["limitations"] for item in exported))
         self.assertNotIn("model_version", old_row)
@@ -87,6 +92,28 @@ class CellScenarioTests(unittest.TestCase):
         legacy["environment_recorded"] = True
         payload = export_single_cell_scenario(environment, state, [legacy], [])
         with self.assertRaisesRegex(ValueError, "标记与实际字段不一致"):
+            import_single_cell_scenario(payload)
+
+    def test_legacy_environment_snapshot_remains_importable_but_is_incomplete(self):
+        state = IntracellularState()
+        environment = MicroenvironmentState()
+        row = single_cell_history_row(state, environment)
+        del row["doubling_time_h"]
+        del row["drug_ic50_uM"]
+        del row["environment_inputs_complete"]
+        payload = export_single_cell_scenario(environment, state, [row], [])
+        _, _, restored, _ = import_single_cell_scenario(payload)
+        self.assertTrue(restored[0]["environment_recorded"])
+        exported = add_traceability_fields(restored, evidence_level="B/C")
+        self.assertFalse(exported[0]["environment_inputs_complete"])
+
+    def test_partial_new_environment_input_is_rejected(self):
+        state = IntracellularState()
+        environment = MicroenvironmentState()
+        row = single_cell_history_row(state, environment)
+        del row["drug_ic50_uM"]
+        payload = export_single_cell_scenario(environment, state, [row], [])
+        with self.assertRaisesRegex(ValueError, "环境模型输入字段不完整"):
             import_single_cell_scenario(payload)
 
     def test_environment_snapshot_time_must_match_state_time(self):
@@ -345,6 +372,21 @@ class CellScenarioTests(unittest.TestCase):
         payload["events"][0]["environment"]["pH"] = 99.0
         with self.assertRaisesRegex(ValueError, "环境字段 pH 超出允许范围"):
             import_single_cell_scenario(payload)
+
+    def test_legacy_intervention_snapshot_without_new_inputs_is_importable(self):
+        state = IntracellularState()
+        environment = MicroenvironmentState()
+        snapshot = environment.snapshot()
+        del snapshot["doubling_time_h"]
+        del snapshot["drug_ic50_uM"]
+        payload = export_single_cell_scenario(
+            environment, state, [state.snapshot()], [{
+                "time_h": 0.0, "event": "stress", "event_type": "oxidative_stress",
+                "input_index": 20.0, "environment": snapshot,
+            }],
+        )
+        _, _, _, events = import_single_cell_scenario(payload)
+        self.assertEqual(events[0]["environment"], snapshot)
 
 
 if __name__ == "__main__":

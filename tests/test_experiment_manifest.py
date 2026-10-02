@@ -23,6 +23,23 @@ class ExperimentManifestTestCase(unittest.TestCase):
         self.assertEqual(manifest["scheduled_actions"][0]["at_time_h"], 24)
         self.assertEqual(manifest["experiment_metadata"]["passage_number"], "P12")
 
+    def test_manifest_does_not_share_mutable_session_records(self) -> None:
+        cell = CellCulture("hela")
+        events = [{"event": "设置环境", "details": {"pH": 7.2}}]
+        actions = [{"at_time_h": 24, "action": "补充葡萄糖", "status": "pending"}]
+        metadata = {"batch": {"anonymous_operator": "op-1"}}
+        manifest = build_manifest(
+            cell, app_version="test", preset_name="标准培养", app_mode="培养环境与数据工作流",
+            time_multiplier=60, history=[cell.snapshot()], events=events,
+            scheduled_actions=actions, experiment_metadata=metadata,
+        )
+        events[0]["details"]["pH"] = 6.8
+        actions[0]["status"] = "executed"
+        metadata["batch"]["anonymous_operator"] = "op-2"
+        self.assertEqual(manifest["events"][0]["details"]["pH"], 7.2)
+        self.assertEqual(manifest["scheduled_actions"][0]["status"], "pending")
+        self.assertEqual(manifest["experiment_metadata"]["batch"]["anonymous_operator"], "op-1")
+
 
 if __name__ == "__main__":
     unittest.main()

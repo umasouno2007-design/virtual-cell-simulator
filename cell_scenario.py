@@ -16,14 +16,20 @@ from version import MODEL_VERSION
 
 SINGLE_SCHEMA = "e-cell-single-cell/v1"
 COLONY_SCHEMA = "e-cell-microcolony/v1"
-_ENVIRONMENT_EVENT_LIMITS = {
+_LEGACY_ENVIRONMENT_EVENT_LIMITS = {
     "local_oxygen_availability": (0.0, 1.0),
     "glucose_mM": (0.0, 100.0), "glucose_reference_mM": (1e-6, 100.0),
     "lactate_mM": (0.0, 200.0), "pH": (5.5, 9.0),
     "temperature_C": (0.0, 50.0), "drug_uM": (0.0, 1e6),
     "local_confluence_percent": (0.0, 100.0),
 }
+_ENVIRONMENT_EVENT_LIMITS = {
+    **_LEGACY_ENVIRONMENT_EVENT_LIMITS,
+    "doubling_time_h": (1.0, 500.0),
+    "drug_ic50_uM": (1e-6, 1e6),
+}
 _ENVIRONMENT_SNAPSHOT_KEYS = {"time_h", *_ENVIRONMENT_EVENT_LIMITS}
+_LEGACY_ENVIRONMENT_SNAPSHOT_KEYS = {"time_h", *_LEGACY_ENVIRONMENT_EVENT_LIMITS}
 LIMITATION = (
     "场景记录经验模型假设和代表性相对指数；不是实验原始记录、空间成像、"
     "真实细胞通信测量、GLP/GMP 审计追踪或临床文档。"
@@ -35,11 +41,8 @@ def add_traceability_fields(
 ) -> list[dict[str, Any]]:
     """为导出轨迹附加版本、证据等级、环境记录状态和解释边界。"""
 
-    environment_fields = {
-        "local_oxygen_availability", "glucose_mM", "glucose_reference_mM",
-        "lactate_mM", "pH", "temperature_C", "drug_uM",
-        "local_confluence_percent",
-    }
+    environment_fields = set(_LEGACY_ENVIRONMENT_EVENT_LIMITS)
+    full_environment_fields = set(_ENVIRONMENT_EVENT_LIMITS)
     history_starts_at_zero = bool(rows) and abs(float(rows[0].get("time_h", -1.0))) <= 1e-9
     history_start = rows[0].get("time_h") if rows else None
     result = []
@@ -54,6 +57,7 @@ def add_traceability_fields(
             "history_start_time_h": history_start,
         }
         item["environment_recorded"] = environment_fields.issubset(row)
+        item["environment_inputs_complete"] = full_environment_fields.issubset(row)
         result.append(item)
     return result
 
@@ -67,6 +71,7 @@ def single_cell_history_row(
     row["environment_time_h"] = environment.time_h
     row["time_h"] = state.time_h
     row["environment_recorded"] = True
+    row["environment_inputs_complete"] = True
     return row
 
 
@@ -340,11 +345,16 @@ def _finite(value: Any, name: str) -> float:
 def _validate_history_environment(row: dict, label: str) -> None:
     """验证历史行中的可选环境快照；状态-only旧记录仍可读取。"""
 
-    expected_fields = set(_ENVIRONMENT_EVENT_LIMITS)
+    expected_fields = set(_LEGACY_ENVIRONMENT_EVENT_LIMITS)
     present = expected_fields.intersection(row)
     if present and present != expected_fields:
         raise ValueError(f"{label}环境快照字段不完整。")
     recorded = present == expected_fields
+    optional_fields = set(_ENVIRONMENT_EVENT_LIMITS) - expected_fields
+    optional_present = optional_fields.intersection(row)
+    if optional_present and (not recorded or optional_present != optional_fields):
+        raise ValueError(f"{label}环境模型输入字段不完整。")
+    inputs_complete = recorded and optional_present == optional_fields
     if "environment_time_h" in row:
         if not recorded:
             raise ValueError(f"{label}含环境时间但缺少完整环境快照。")
@@ -355,9 +365,14 @@ def _validate_history_environment(row: dict, label: str) -> None:
     if "environment_recorded" in row:
         if type(row["environment_recorded"]) is not bool or row["environment_recorded"] is not recorded:
             raise ValueError(f"{label} environment_recorded 标记与实际字段不一致。")
+    if "environment_inputs_complete" in row:
+        if type(row["environment_inputs_complete"]) is not bool or row["environment_inputs_complete"] is not inputs_complete:
+            raise ValueError(f"{label} environment_inputs_complete 标记与实际字段不一致。")
     if not recorded:
         return
     for field, (low, high) in _ENVIRONMENT_EVENT_LIMITS.items():
+        if field not in row:
+            continue
         value = _finite(row[field], f"{label}.{field}")
         if not low <= value <= high:
             raise ValueError(f"{label}环境字段 {field} 超出允许范围 {low}–{high}。")
@@ -517,11 +532,15 @@ def _validate_events(rows: Any, final_time: float) -> list[dict]:
                 raise ValueError("教学压力输入指数必须位于 0–100。")
             snapshot = row.get("environment")
             if snapshot is not None:
-                if not isinstance(snapshot, dict) or set(snapshot) != _ENVIRONMENT_SNAPSHOT_KEYS:
+                if not isinstance(snapshot, dict) or set(snapshot) not in (
+                    _ENVIRONMENT_SNAPSHOT_KEYS, _LEGACY_ENVIRONMENT_SNAPSHOT_KEYS,
+                ):
                     raise ValueError("干预事件中的微环境快照字段不完整或包含未知字段。")
                 if abs(_finite(snapshot["time_h"], "event.environment.time_h") - time_h) > 1e-6:
                     raise ValueError("干预事件时间与环境快照时间不一致。")
                 for field, (low, high) in _ENVIRONMENT_EVENT_LIMITS.items():
+                    if field not in snapshot:
+                        continue
                     value = _finite(snapshot[field], f"event.environment.{field}")
                     if not low <= value <= high:
                         raise ValueError(f"干预事件环境字段 {field} 超出允许范围 {low}–{high}。")

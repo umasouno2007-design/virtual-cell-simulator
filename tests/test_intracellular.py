@@ -71,6 +71,16 @@ class IntracellularStateTestCase(unittest.TestCase):
         state.apply_antioxidant_response(15.0)
         self.assertLess(state.ros_percent, stressed_ros)
 
+    def test_invalid_teaching_pulse_does_not_reverse_or_reset_state(self) -> None:
+        state = IntracellularState()
+        before = state.snapshot()
+        for action in (state.apply_oxidative_stress, state.apply_antioxidant_response):
+            for invalid in (-1.0, float("nan"), float("inf"), True, "strong"):
+                with self.subTest(action=action.__name__, intensity=invalid):
+                    with self.assertRaisesRegex(ValueError, "教学干预强度"):
+                        action(invalid)
+        self.assertEqual(state.snapshot(), before)
+
     def test_status_reports_severe_apoptosis(self) -> None:
         state = IntracellularState(apoptosis_signal_percent=75.0)
         self.assertEqual(intracellular_status(state), ("促凋亡压力相对指数高", "error"))

@@ -22,8 +22,10 @@ class SensitivityTestCase(unittest.TestCase):
         self.assertEqual(len(summary), 3 * len(SENSITIVITY_PARAMETERS))
 
     def test_invalid_horizon_is_rejected(self) -> None:
-        with self.assertRaisesRegex(ValueError, "分析时长"):
-            simulate_one_factor(CellCulture(), "growth_scale", 0)
+        for invalid in (0, -1, 169, None, "later", True, float("nan"), float("inf")):
+            with self.subTest(horizon=invalid):
+                with self.assertRaisesRegex(ValueError, "分析时长"):
+                    simulate_one_factor(CellCulture(), "growth_scale", invalid)
 
 
 if __name__ == "__main__":
