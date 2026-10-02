@@ -305,7 +305,7 @@ ORGANELLE_OBSERVATIONS = {
         "role": "分泌/膜蛋白折叠与质量控制", "prompt": "在低糖、药物或 ROS 升高后观察内质网应激。",
     },
     "ser": {
-        "label": "滑面内质网", "metric": "cytosolic_calcium_nm", "unit": "nM",
+        "label": "滑面内质网", "metric": "cytosolic_calcium_nm", "unit": "（模型刻度）",
         "role": "脂质代谢与钙稳态", "prompt": "观察 ER 应激与胞质钙代理指标的联动。",
     },
     "golgi": {
@@ -2000,7 +2000,7 @@ def intracellular_metrics(state: IntracellularState) -> None:
         ("◈", "线粒体膜电位", f"{state.mitochondrial_potential_percent:.1f}%"),
         ("⬡", "糖酵解活性", f"{state.glycolysis_percent:.1f}%"),
         ("✹", "ROS", f"{state.ros_percent:.1f}%"),
-        ("Ca", "胞质 Ca²⁺", f"{state.cytosolic_calcium_nm:.0f} nM"),
+        ("Ca", "胞质 Ca²⁺ 代理", f"{state.cytosolic_calcium_nm:.0f}（模型刻度）"),
         ("DNA", "DNA 损伤", f"{state.dna_damage_percent:.1f}%"),
         ("ER", "内质网应激", f"{state.er_stress_percent:.1f}%"),
         ("♻", "自噬活性", f"{state.autophagy_percent:.1f}%"),
@@ -2016,6 +2016,7 @@ def intracellular_metrics(state: IntracellularState) -> None:
         for icon, label, value in values
     )
     st.markdown(f'<div class="vc-metric-grid">{cards}</div>', unsafe_allow_html=True)
+    st.caption("Ca²⁺ 数值沿用内部历史字段 calcium_nM，但系未校准的教学代理刻度，不是实测胞质钙浓度；其他百分比也是相对功能指数。")
 
 
 def observability_panel() -> None:
@@ -2272,7 +2273,7 @@ def organelle_explorer(cell, state: IntracellularState) -> None:
         explanation = "ROS 相对压力和药物暴露会通过现有模型影响 DNA 损伤与促凋亡压力相对指数；并不表示损伤灶数或凋亡细胞比例。"
     elif selected == "rer":
         status = "状态：相对稳定" if state.er_stress_percent < 25 else "状态：应激中等" if state.er_stress_percent < 55 else "状态：应激高"
-        readout = f"ER 应激 {state.er_stress_percent:.1f}% · Ca²⁺ {state.cytosolic_calcium_nm:.0f} nM · 蛋白合成 {state.protein_synthesis_percent:.1f}%"
+        readout = f"ER 应激 {state.er_stress_percent:.1f}% · Ca²⁺ 代理 {state.cytosolic_calcium_nm:.0f}（模型刻度） · 蛋白合成 {state.protein_synthesis_percent:.1f}%"
         explanation = f"葡萄糖 {cell.glucose_mm:.1f} mM、药物与 ROS 会影响现有模型的 ER 应激代理指标。"
     else:
         status = "状态：回收压力低" if state.autophagy_percent < 45 else "状态：回收压力高"
@@ -2400,7 +2401,7 @@ def intracellular_map(state: IntracellularState) -> None:
         <div class="tag nucleus {focus_class('nucleus')}"><b>细胞核 · 核仁</b><small>DNA 损伤 {state.dna_damage_percent:.1f}%</small></div>
         <div class="tag mitochondria {focus_class('mitochondria')}"><b>线粒体</b><small>膜电位 {mito:.1f}% · {mito_label}</small></div>
         <div class="tag rer {focus_class('rer')}"><b>粗面内质网</b><small>应激 {state.er_stress_percent:.1f}%</small></div>
-        <div class="tag ser {focus_class('ser')}"><b>滑面内质网</b><small>Ca²⁺ {state.cytosolic_calcium_nm:.0f} nM</small></div>
+        <div class="tag ser {focus_class('ser')}"><b>滑面内质网</b><small>Ca²⁺ 代理 {state.cytosolic_calcium_nm:.0f}</small></div>
         <div class="tag golgi {focus_class('golgi')}"><b>高尔基体</b><small>加工 · 分选 · 囊泡运输</small></div>
         <div class="tag lysosome {focus_class('lysosome')}"><b>溶酶体</b><small>自噬 {state.autophagy_percent:.1f}%</small></div>
       </div>

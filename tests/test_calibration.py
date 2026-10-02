@@ -4,7 +4,7 @@ import unittest
 
 import pandas as pd
 
-from calibration import _score, fit_growth_and_uptake, fit_with_temporal_holdout
+from calibration import _score, fit_growth_and_uptake, fit_with_temporal_holdout, replay_from_initial
 from cell import CellCulture
 
 
@@ -63,6 +63,41 @@ class CalibrationTestCase(unittest.TestCase):
         })
         with self.assertRaisesRegex(ValueError, "非有限"):
             fit_growth_and_uptake(cell, [cell.snapshot()], measurements)
+
+    def test_replay_rejects_unbounded_or_invalid_time_before_stepping(self) -> None:
+        cell = CellCulture("hela")
+        initial = cell.snapshot()
+        for targets, message in (
+            ([float("inf")], "有限"),
+            ([-1.0], "不能早于"),
+            ([169.0], "最长支持 168 h"),
+        ):
+            with self.subTest(targets=targets):
+                with self.assertRaisesRegex(ValueError, message):
+                    replay_from_initial(cell, initial, targets, 1.0, 1.0)
+        self.assertEqual(cell.time_h, 0.0)
+
+    def test_replay_preserves_nondefault_oxygen_setpoint(self) -> None:
+        low_oxygen = CellCulture("a549")
+        low_oxygen.oxygen_setpoint_percent = 2.0
+        initial = low_oxygen.snapshot()
+        low_oxygen.step(1.0)
+        template = CellCulture("a549")
+        template.oxygen_setpoint_percent = 2.0
+        replayed, rows = replay_from_initial(template, initial, [1.0], 1.0, 1.0)
+        self.assertAlmostEqual(replayed.oxygen_percent, low_oxygen.oxygen_percent)
+        self.assertAlmostEqual(rows[-1]["oxygen_percent"], low_oxygen.oxygen_percent)
+
+    def test_grid_search_rejects_extreme_finite_measurement_horizon(self) -> None:
+        cell = CellCulture("hela")
+        measurements = pd.DataFrame({
+            "time_h": [0.0, 1e12],
+            "viable_cells": [100.0, 120.0],
+        })
+        with self.assertRaisesRegex(ValueError, "最长支持"):
+            fit_growth_and_uptake(cell, [cell.snapshot()], measurements)
+        with self.assertRaisesRegex(ValueError, "最长支持"):
+            fit_with_temporal_holdout(cell, [cell.snapshot()], measurements)
 
     def test_direct_grid_search_rejects_duplicate_measurement_time(self) -> None:
         cell = CellCulture("hela")

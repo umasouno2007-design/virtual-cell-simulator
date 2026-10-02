@@ -161,6 +161,9 @@ class AppStateTestCase(unittest.TestCase):
         )
         self.assertIn("ATP 水平", metric_grid.value)
         self.assertIn("DNA 损伤", metric_grid.value)
+        self.assertIn("胞质 Ca²⁺ 代理", metric_grid.value)
+        self.assertNotIn(" nM", metric_grid.value)
+        self.assertTrue(any("不是实测胞质钙浓度" in item.value for item in app.caption))
         self.assertTrue(any("乳酸会记录到环境轨迹，但当前单细胞状态方程不直接使用" in item.value for item in app.caption))
         self.assertEqual(len(app.exception), 0)
 

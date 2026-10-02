@@ -59,8 +59,12 @@ def new_simulation(
 def run_steps(
     cell: CellCulture, history: History, steps: int = 1, dt_h: float = 1.0
 ) -> int:
-    """推进指定步数；每步记录一次带单位的数据。"""
+    """推进非负整数步；每步记录一次带单位的数据，非法输入不改变状态。"""
 
+    if type(steps) is not int or steps < 0:
+        raise ValueError("模拟步数必须是非负整数。")
+    if isinstance(dt_h, bool):
+        raise ValueError("每步时长必须是 0–6 h 内的有限正数。")
     try:
         step_hours = float(dt_h)
     except (TypeError, ValueError):
@@ -68,7 +72,7 @@ def run_steps(
     if not isfinite(step_hours) or not 0 < step_hours <= 6.0:
         raise ValueError("每步时长必须是 0–6 h 内的有限正数。")
     completed = 0
-    for _ in range(max(0, int(steps))):
+    for _ in range(steps):
         if not cell.alive:
             break
         cell.step(step_hours)

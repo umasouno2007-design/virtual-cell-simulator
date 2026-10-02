@@ -11,6 +11,8 @@ from experiment_data import comparison_frame, residual_summary
 
 
 FIT_FIELDS = ("viable_cells", "glucose_mM", "lactate_mM")
+# 与当前培养场景可配置的最长运行时段一致；这不是生物学有效期。
+MAX_CALIBRATION_HORIZON_H = 168.0
 _CULTURE_INTERVENTIONS = {
     "环境调整", "全量换液", "设置药物", "补充葡萄糖", "补充溶氧", "应用粗校准",
     "计划执行：补充葡萄糖", "计划执行：补充溶氧",
@@ -44,6 +46,9 @@ def _make_cell(template: CellCulture, initial: dict, growth_scale: float, uptake
     parameters.growth_scale = growth_scale
     parameters.uptake_scale = uptake_scale
     cell = CellCulture(template.profile_key, template.culture_volume_ml, template.surface_area_cm2, parameters=parameters)
+    # 旧培养历史快照只记录局部氧代理，不包含培养环境氧设定值。
+    # 无中途干预的校准沿用当前实验场景的设定值，而非构造器的默认 18.6%。
+    cell.oxygen_setpoint_percent = template.oxygen_setpoint_percent
     for source, target in _SNAPSHOT_FIELDS.items():
         if source in initial:
             setattr(cell, target, initial[source])
@@ -51,11 +56,19 @@ def _make_cell(template: CellCulture, initial: dict, growth_scale: float, uptake
 
 
 def replay_from_initial(template: CellCulture, initial: dict, target_times, growth_scale: float, uptake_scale: float) -> tuple[CellCulture, list[dict]]:
-    """从历史首点重演到指定时间；最大内部步长为 1 小时。"""
+    """从历史首点重演至有限目标时刻；每段内部步长不超过 1 h。"""
 
     cell = _make_cell(template, initial, growth_scale, uptake_scale)
     history = [cell.snapshot()]
-    for target in sorted({float(value) for value in target_times if float(value) >= cell.time_h}):
+    try:
+        targets = [float(value) for value in target_times]
+    except (TypeError, ValueError):
+        raise ValueError("校准重演时间必须是有限小时数。") from None
+    if any(not isfinite(target) or target < cell.time_h for target in targets):
+        raise ValueError("校准重演时间必须是有限数值，且不能早于起始时刻。")
+    if targets and max(targets) - cell.time_h > MAX_CALIBRATION_HORIZON_H:
+        raise ValueError(f"校准重演最长支持 {MAX_CALIBRATION_HORIZON_H:g} h；请缩短拟合时段或分段分析。")
+    for target in sorted(set(targets)):
         while cell.alive and cell.time_h < target:
             cell.step(min(1.0, target - cell.time_h))
         if target > initial.get("time_h", 0.0):
@@ -158,6 +171,8 @@ def fit_growth_and_uptake(
             f"有实测时间早于模拟历史起点（{initial_time:g} h）；"
             "请统一实验时间原点或从匹配的初始场景重新模拟。"
         )
+    if float(measurement_times.max()) - initial_time > MAX_CALIBRATION_HORIZON_H:
+        raise ValueError(f"粗校准最长支持从模拟起点起 {MAX_CALIBRATION_HORIZON_H:g} h 的实测时段；请缩短拟合时段或分段分析。")
     for field in FIT_FIELDS:
         if field not in measurements:
             continue
@@ -207,6 +222,13 @@ def fit_with_temporal_holdout(
         raise ValueError("实测时间点重复；请先核对并标准化 CSV。")
     ordered = measurements.assign(time_h=times).sort_values("time_h").reset_index(drop=True)
     ordered.attrs = measurements.attrs.copy()
+    if model_history:
+        try:
+            initial_time = float(model_history[0].get("time_h", 0.0))
+        except (TypeError, ValueError):
+            initial_time = float("nan")
+        if isfinite(initial_time) and not ordered.empty and float(ordered["time_h"].max()) - initial_time > MAX_CALIBRATION_HORIZON_H:
+            raise ValueError(f"粗校准最长支持从模拟起点起 {MAX_CALIBRATION_HORIZON_H:g} h 的实测时段；请缩短拟合时段或分段分析。")
     report = quality_report(ordered)
     if report["blocked"]:
         raise ValueError(f"实测数据质量阻止粗校准：{report['blocked'][0][0]}。{report['blocked'][0][1]}")
