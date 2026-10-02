@@ -93,6 +93,12 @@ class MicroenvironmentAndMicrocolonyTests(unittest.TestCase):
         atp_values = {round(cell.state.atp_percent, 5) for cell in colony.cells}
         self.assertGreater(len(atp_values), 1)
 
+    def test_long_microcolony_step_is_not_silently_shortened(self) -> None:
+        colony = MicrocolonyState(cell_count=3)
+        with self.assertRaisesRegex(ValueError, "单步时长不能超过 6 h"):
+            colony.step(MicroenvironmentState(), 24.0)
+        self.assertEqual(colony.time_h, 0.0)
+
     def test_subgroup_summary_conserves_representative_cells_and_percentage(self) -> None:
         colony = MicrocolonyState(cell_count=17)
         rows = colony.subgroup_summary()

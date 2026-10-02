@@ -81,6 +81,12 @@ class IntracellularStateTestCase(unittest.TestCase):
                         action(invalid)
         self.assertEqual(state.snapshot(), before)
 
+    def test_long_single_cell_step_is_not_silently_shortened(self) -> None:
+        state = IntracellularState()
+        with self.assertRaisesRegex(ValueError, "单步时长不能超过 6 h"):
+            state.step(CellCulture("hela"), 24.0)
+        self.assertEqual(state.time_h, 0.0)
+
     def test_status_reports_severe_apoptosis(self) -> None:
         state = IntracellularState(apoptosis_signal_percent=75.0)
         self.assertEqual(intracellular_status(state), ("促凋亡压力相对指数高", "error"))

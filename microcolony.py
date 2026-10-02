@@ -106,7 +106,8 @@ class MicrocolonyState:
             return
         if not isfinite(dt_h) or dt_h <= 0:
             return
-        dt_h = min(dt_h, 6.0)
+        if dt_h > 6.0:
+            raise ValueError("微群体单步时长不能超过 6 h；请分步推进。")
         environment = environment.normalized()
         releases = [self._release(cell) for cell in self.cells]
         signals: list[float] = []

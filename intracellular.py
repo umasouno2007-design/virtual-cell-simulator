@@ -73,7 +73,8 @@ class IntracellularState:
             return
         if not isfinite(dt_h) or dt_h <= 0:
             return
-        dt_h = min(dt_h, 6.0)
+        if dt_h > 6.0:
+            raise ValueError("单细胞单步时长不能超过 6 h；请分步推进。")
         # 兼容旧调用：现有培养工作流继续传入 CellCulture；新单细胞/微群体只传入环境。
         microenvironment = (
             environment if isinstance(environment, MicroenvironmentState)
