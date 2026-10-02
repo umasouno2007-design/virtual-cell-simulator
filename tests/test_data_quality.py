@@ -37,6 +37,15 @@ class DataQualityTests(unittest.TestCase):
         result = quality_report(pd.DataFrame({"time_h": [0, 24, 48], "glucose_mM": [10, None, 8]}))
         self.assertTrue(any("缺失值" in item[0] for item in result["warnings"]))
 
+    def test_direct_dataframe_text_is_not_counted_as_numeric_observation(self):
+        data = pd.DataFrame({
+            "time_h": [0, 24, 48], "glucose_mM": ["5.0", "five", "NA"],
+        })
+        result = quality_report(data)
+        self.assertFalse(result["is_minimum_model_ready"])
+        self.assertTrue(any("无法解析为数值" in issue for issue, _ in result["blocked"]))
+        self.assertTrue(any("缺少可校准指标" in issue for issue, _ in result["blocked"]))
+
     def test_invalid_oxygen_or_ph_scale_is_blocked(self):
         high_oxygen = quality_report(pd.DataFrame({
             "time_h": [0, 24, 48], "oxygen_percent": [21, 25, 101], "viable_cells": [1, 2, 3],

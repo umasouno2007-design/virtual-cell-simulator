@@ -45,16 +45,19 @@ def quality_report(data: pd.DataFrame) -> dict:
         else: passed.append(("时间点数量", "至少有 3 个时间点。"))
     checked_fields = ("viable_cells", "viability_percent", "glucose_mM", "lactate_mM", "oxygen_percent", "pH")
     invalid_numeric_counts = data.attrs.get("invalid_numeric_counts", {})
+    explicit_missing_tokens = {"", "na", "n/a", "null", "nan", "none"}
     for field in checked_fields:
         if field not in data:
             continue
-        invalid_count = int(invalid_numeric_counts.get(field, 0))
+        raw_values = data[field]
+        values = pd.to_numeric(raw_values, errors="coerce")
+        direct_invalid = raw_values.notna() & values.isna() & ~raw_values.astype(str).str.strip().str.lower().isin(explicit_missing_tokens)
+        invalid_count = max(int(invalid_numeric_counts.get(field, 0)), int(direct_invalid.sum()))
         if invalid_count:
             blocked.append((
                 f"{FIELD_LABELS[field]}有 {invalid_count} 个非空值无法解析为数值",
                 "核对原始 CSV 的数字格式与单位；真正未测量的单元格请留空或使用 NA。",
             ))
-        values = pd.to_numeric(data[field], errors="coerce")
         finite_values = values.map(lambda value: isfinite(float(value)) if pd.notna(value) else True)
         if not finite_values.all():
             blocked.append((f"{FIELD_LABELS[field]}包含无穷值", "仅保留有限测量值；未测量值使用空单元格并在实验记录中说明。"))
@@ -79,7 +82,10 @@ def quality_report(data: pd.DataFrame) -> dict:
         ))
     if "pH" in data and (pd.to_numeric(data["pH"], errors="coerce").dropna() > 14).any():
         blocked.append(("pH 超出 0–14 的常规标度", "核对 CSV 中的酸碱指标单位与列映射。"))
-    available = [field for field in ("viable_cells", "glucose_mM", "lactate_mM") if field in data and data[field].notna().sum() >= 2]
+    available = [
+        field for field in ("viable_cells", "glucose_mM", "lactate_mM")
+        if field in data and pd.to_numeric(data[field], errors="coerce").notna().sum() >= 2
+    ]
     if not available: blocked.append(("缺少可校准指标", "至少提供活细胞数、葡萄糖或乳酸中的一个，且有两个时间点。"))
     else: passed.append(("可校准指标", "、".join(FIELD_LABELS[f] for f in available)))
     if len(data) < 5: warnings.append(("没有充足留出点", "建议预先保留后段或独立批次用于验证；否则只能报告拟合误差。"))

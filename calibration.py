@@ -102,7 +102,10 @@ def fit_growth_and_uptake(
 
     if len(measurements) < 2:
         raise ValueError("粗校准至少需要两个实测时间点。")
-    eligible = [field for field in FIT_FIELDS if field in measurements and measurements[field].notna().sum() >= 2]
+    eligible = [
+        field for field in FIT_FIELDS
+        if field in measurements and pd.to_numeric(measurements[field], errors="coerce").notna().sum() >= 2
+    ]
     if not eligible:
         raise ValueError("请至少提供活细胞数、葡萄糖或乳酸中的一个指标，且不少于两个时间点。")
     try:
