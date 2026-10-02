@@ -6,6 +6,7 @@
 
 from hashlib import sha256
 from io import BytesIO
+import re
 from typing import Iterable
 
 import pandas as pd
@@ -48,7 +49,8 @@ def _read_csv(contents: bytes) -> pd.DataFrame:
     last_error: UnicodeDecodeError | None = None
     for encoding in ("utf-8-sig", "gb18030"):
         try:
-            return pd.read_csv(BytesIO(contents), encoding=encoding)
+            # 保留 NA 等原始文本，区分“明确缺测”与拼写/单位错误。
+            return pd.read_csv(BytesIO(contents), encoding=encoding, keep_default_na=False)
         except UnicodeDecodeError as error:
             last_error = error
     raise ValueError("CSV 编码无法识别；请保存为 UTF-8 或 GB18030 后重试。") from last_error
@@ -60,28 +62,62 @@ def standardize_measurements(contents: bytes) -> tuple[pd.DataFrame, list[str]]:
     raw = _read_csv(contents)
     if raw.empty:
         raise ValueError("CSV 不含数据行。")
-    headers = {_normalized_header(column): column for column in raw.columns}
+    headers: dict[str, list[object]] = {}
+    recognized_aliases = {
+        _normalized_header(alias) for aliases in _ALIASES.values() for alias in aliases
+    }
+    for column in raw.columns:
+        headers.setdefault(_normalized_header(column), []).append(column)
+        # pandas 会把完全同名的 CSV 表头改写为 name.1、name.2；
+        # 它们仍是同一指标的歧义输入，不能当作普通未识别列忽略。
+        mangled = re.fullmatch(r"(.+)\.\d+", str(column))
+        if mangled and _normalized_header(mangled.group(1)) in recognized_aliases:
+            headers.setdefault(_normalized_header(mangled.group(1)), []).append(column)
     mapped: dict[str, object] = {}
     for target, aliases in _ALIASES.items():
-        source = next((headers.get(_normalized_header(alias)) for alias in aliases if _normalized_header(alias) in headers), None)
-        if source is not None:
-            mapped[target] = source
+        candidates = list(dict.fromkeys(
+            column for alias in aliases
+            for column in headers.get(_normalized_header(alias), [])
+        ))
+        if len(candidates) > 1:
+            raise ValueError(
+                f"指标 {FIELD_LABELS[target]} 对应多个 CSV 列："
+                f"{'、'.join(str(column) for column in candidates)}。"
+                "请保留一列并核对单位后重新导入。"
+            )
+        if candidates:
+            mapped[target] = candidates[0]
     if "time_h" not in mapped:
         raise ValueError("未找到时间列。请使用 time_h、time、hour 或“时间”。")
-    data = pd.DataFrame({target: pd.to_numeric(raw[source], errors="coerce") for target, source in mapped.items()})
+    missing_tokens = {"", "na", "n/a", "null", "nan", "none"}
+    invalid_numeric_counts: dict[str, int] = {}
+    numeric_columns: dict[str, pd.Series] = {}
+    for target, source in mapped.items():
+        values = raw[source]
+        numeric = pd.to_numeric(values, errors="coerce")
+        explicitly_missing = values.isna() | values.astype(str).str.strip().str.lower().isin(missing_tokens)
+        invalid_numeric_counts[target] = int((~explicitly_missing & numeric.isna()).sum())
+        numeric_columns[target] = numeric
+    data = pd.DataFrame(numeric_columns)
     invalid_time_count = int(data["time_h"].isna().sum())
     nonmonotonic_time_count = int(data["time_h"].diff().lt(0).sum())
-    data = data.dropna(subset=["time_h"]).sort_values("time_h")
+    # 稳定排序保留同一时间点在原文件中的先后顺序，后续 keep="last"
+    # 才真正表示“保留原始 CSV 的最后一行”。
+    data = data.dropna(subset=["time_h"]).sort_values("time_h", kind="stable")
     duplicate_time_count = int(data["time_h"].duplicated(keep=False).sum())
     data = data.drop_duplicates("time_h", keep="last")
     if data.empty:
         raise ValueError("时间列没有可用的数值。")
     numeric_fields = [column for column in data.columns if column != "time_h"]
-    data = data.dropna(axis=1, how="all")
+    # 保留已识别但全空的观测列，使质量报告能明确提示整列缺失，
+    # 而不是在标准化阶段悄悄抹掉该测量字段。
     recognized = "、".join(FIELD_LABELS[field] for field in numeric_fields if field in data.columns)
     notes = [f"已识别 {len(data)} 个时间点。"]
     if invalid_time_count:
         notes.append(f"原始 CSV 有 {invalid_time_count} 行时间缺失或无法解析；标准化副本未纳入这些行，质量检查会阻止用于对齐/校准。")
+    for field, count in invalid_numeric_counts.items():
+        if count and field != "time_h":
+            notes.append(f"{FIELD_LABELS[field]}有 {count} 个非空值无法解析为数值；质量检查会阻止用于对齐/校准。")
     if nonmonotonic_time_count:
         notes.append(f"原始 CSV 有 {nonmonotonic_time_count} 处时间倒序；标准化副本按时间排序，请核对原始记录。")
     if duplicate_time_count:
@@ -94,6 +130,7 @@ def standardize_measurements(contents: bytes) -> tuple[pd.DataFrame, list[str]]:
     data.attrs["duplicate_time_count"] = duplicate_time_count
     data.attrs["invalid_time_count"] = invalid_time_count
     data.attrs["nonmonotonic_time_count"] = nonmonotonic_time_count
+    data.attrs["invalid_numeric_counts"] = invalid_numeric_counts
     return data, notes
 
 
@@ -102,7 +139,9 @@ def comparison_frame(simulation: pd.DataFrame, measurements: pd.DataFrame) -> pd
 
     if "time_h" not in simulation or "time_h" not in measurements:
         raise ValueError("模拟和实测数据都必须包含 time_h。")
-    simulation = simulation.sort_values("time_h").drop_duplicates("time_h", keep="last")
+    # 同一模拟时刻可先后有干预前/后快照；稳定排序让 keep="last"
+    # 确定地选择事件后的最后记录。
+    simulation = simulation.sort_values("time_h", kind="stable").drop_duplicates("time_h", keep="last")
     result = measurements[["time_h"]].copy()
     for field in (field for field in FIELD_LABELS if field != "time_h"):
         if field not in measurements or field not in simulation:

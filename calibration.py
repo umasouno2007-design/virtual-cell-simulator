@@ -6,6 +6,7 @@ from math import isfinite
 import pandas as pd
 
 from cell import CellCulture, ModelParameters
+from data_quality import quality_report
 from experiment_data import comparison_frame, residual_summary
 
 
@@ -159,6 +160,11 @@ def fit_growth_and_uptake(
         viability = pd.to_numeric(measurements["viability_percent"], errors="coerce").dropna()
         if (viability > 100.0).any():
             raise ValueError("存活率不能超过 100%；请核对输入是否为百分比。")
+    # 直接调用网格搜索也须经过与界面相同的质量门槛。否则未参与拟合的
+    # 氧/pH 等列或原始 CSV 的解析问题可能被训练入口忽略。
+    report = quality_report(measurements)
+    if report["blocked"]:
+        raise ValueError(f"实测数据质量阻止粗校准：{report['blocked'][0][0]}。{report['blocked'][0][1]}")
     growth_candidates = [round(value / 10, 1) for value in range(1, 21)]
     uptake_candidates = [round(value / 10, 1) for value in range(1, 31)]
     best: tuple[float, float, float] | None = None
@@ -190,6 +196,10 @@ def fit_with_temporal_holdout(
     if times.duplicated().any():
         raise ValueError("实测时间点重复；请先核对并标准化 CSV。")
     ordered = measurements.assign(time_h=times).sort_values("time_h").reset_index(drop=True)
+    ordered.attrs = measurements.attrs.copy()
+    report = quality_report(ordered)
+    if report["blocked"]:
+        raise ValueError(f"实测数据质量阻止粗校准：{report['blocked'][0][0]}。{report['blocked'][0][1]}")
     for field in FIT_FIELDS:
         if field not in ordered:
             continue

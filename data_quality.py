@@ -44,9 +44,16 @@ def quality_report(data: pd.DataFrame) -> dict:
         if len(data) < 3: warnings.append(("时间点少于 3", "可比较但不足以支持训练/留出划分。"))
         else: passed.append(("时间点数量", "至少有 3 个时间点。"))
     checked_fields = ("viable_cells", "viability_percent", "glucose_mM", "lactate_mM", "oxygen_percent", "pH")
+    invalid_numeric_counts = data.attrs.get("invalid_numeric_counts", {})
     for field in checked_fields:
         if field not in data:
             continue
+        invalid_count = int(invalid_numeric_counts.get(field, 0))
+        if invalid_count:
+            blocked.append((
+                f"{FIELD_LABELS[field]}有 {invalid_count} 个非空值无法解析为数值",
+                "核对原始 CSV 的数字格式与单位；真正未测量的单元格请留空或使用 NA。",
+            ))
         values = pd.to_numeric(data[field], errors="coerce")
         finite_values = values.map(lambda value: isfinite(float(value)) if pd.notna(value) else True)
         if not finite_values.all():

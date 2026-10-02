@@ -147,6 +147,46 @@ class CalibrationTestCase(unittest.TestCase):
             next(row["RMSE"] for row in result.training_metrics if row["指标"] == "活细胞数"),
         )
 
+    def test_temporal_calibration_respects_quality_report_metadata(self) -> None:
+        cell = CellCulture("hela")
+        measurements = pd.DataFrame({
+            "time_h": [0.0, 24.0, 48.0],
+            "viable_cells": [100.0, 150.0, 200.0],
+        })
+        measurements.attrs["invalid_time_count"] = 1
+        with self.assertRaisesRegex(ValueError, "原始 CSV"):
+            fit_with_temporal_holdout(cell, [cell.snapshot()], measurements)
+
+    def test_temporal_calibration_checks_unfitted_observed_fields(self) -> None:
+        cell = CellCulture("hela")
+        measurements = pd.DataFrame({
+            "time_h": [0.0, 24.0, 48.0],
+            "viable_cells": [100.0, 150.0, 200.0],
+            "oxygen_percent": [21.0, 20.0, 101.0],
+        })
+        with self.assertRaisesRegex(ValueError, "氧百分比"):
+            fit_with_temporal_holdout(cell, [cell.snapshot()], measurements)
+
+    def test_direct_grid_search_checks_unfitted_observed_fields(self) -> None:
+        cell = CellCulture("hela")
+        measurements = pd.DataFrame({
+            "time_h": [0.0, 24.0, 48.0],
+            "viable_cells": [100.0, 150.0, 200.0],
+            "pH": [7.4, 7.2, 15.0],
+        })
+        with self.assertRaisesRegex(ValueError, "pH 超出"):
+            fit_growth_and_uptake(cell, [cell.snapshot()], measurements)
+
+    def test_direct_grid_search_respects_original_csv_quality_metadata(self) -> None:
+        cell = CellCulture("hela")
+        measurements = pd.DataFrame({
+            "time_h": [0.0, 24.0, 48.0],
+            "viable_cells": [100.0, 150.0, 200.0],
+        })
+        measurements.attrs["invalid_time_count"] = 1
+        with self.assertRaisesRegex(ValueError, "原始 CSV"):
+            fit_growth_and_uptake(cell, [cell.snapshot()], measurements)
+
     def test_viability_above_one_hundred_is_rejected(self) -> None:
         cell = CellCulture("hela")
         measurements = pd.DataFrame({
