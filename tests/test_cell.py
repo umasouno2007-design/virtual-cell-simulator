@@ -1,5 +1,6 @@
 """研究型培养模型的基础测试。"""
 
+import math
 import unittest
 
 from cell import CellCulture
@@ -92,6 +93,16 @@ class CellCultureTestCase(unittest.TestCase):
         self.assertEqual(len(history), 1)
         self.assertEqual(cell.time_h, 0.0)
 
+    def test_direct_step_rejects_truncated_or_nonfinite_duration(self) -> None:
+        cell = CellCulture("hela")
+        before = cell.snapshot()
+        for invalid in (-1.0, 6.1, float("nan"), float("inf"), None, True):
+            with self.subTest(dt_h=invalid):
+                with self.assertRaisesRegex(ValueError, "培养单步时长"):
+                    cell.step(invalid)
+        cell.step(0.0)
+        self.assertEqual(cell.snapshot(), before)
+
     def test_nonfinite_culture_actions_leave_state_unchanged(self) -> None:
         cell = CellCulture("hela")
         before = cell.snapshot()
@@ -120,6 +131,27 @@ class CellCultureTestCase(unittest.TestCase):
         self.assertGreaterEqual(snapshot["glucose_mM"], 0)
         self.assertGreaterEqual(snapshot["lactate_mM"], 0)
         self.assertLessEqual(snapshot["oxygen_percent"], 21)
+
+    def test_nonfinite_environment_does_not_contaminate_growth_history(self) -> None:
+        cell = CellCulture("hela")
+        cell.temperature_c = float("nan")
+        cell.co2_percent = float("inf")
+        cell.osmolality_mosm_kg = float("nan")
+        cell.oxygen_setpoint_percent = float("inf")
+        cell.step(1.0)
+        snapshot = cell.snapshot()
+        self.assertTrue(all(math.isfinite(value) for value in snapshot.values() if isinstance(value, float)))
+        self.assertEqual(cell.temperature_c, cell.profile.temperature_c)
+        self.assertEqual(cell.co2_percent, cell.profile.co2_percent)
+
+    def test_nonfinite_model_parameter_is_rejected_before_growth_calculation(self) -> None:
+        for invalid in (float("nan"), float("inf"), True, "fast"):
+            cell = CellCulture("hela")
+            cell.parameters.growth_scale = invalid
+            with self.subTest(value=invalid):
+                with self.assertRaisesRegex(ValueError, "growth_scale"):
+                    cell.step(1.0)
+                self.assertEqual(cell.time_h, 0.0)
 
     def test_zero_saturation_parameters_do_not_divide_by_zero(self) -> None:
         cell = CellCulture("hela")

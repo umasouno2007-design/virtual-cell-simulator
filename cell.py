@@ -1,6 +1,6 @@
 """单位明确、可校准的细胞培养动力学模型。"""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from math import exp, isfinite, log
 from typing import Dict
 
@@ -118,6 +118,7 @@ class CellCulture:
         """
 
         p = self.parameters
+        self._validate_finite_parameters()
         glucose_mm = _finite_nonnegative(self.glucose_mm)
         glutamine_mm = _finite_nonnegative(self.glutamine_mm)
         oxygen_percent = _finite_nonnegative(self.oxygen_percent)
@@ -151,17 +152,33 @@ class CellCulture:
         }
 
     def step(self, dt_h: float = 1.0) -> None:
-        """用经验动力学方程推进培养状态。实验预测前必须重新拟合参数。"""
+        """推进 0–6 h；越界时长抛错，实验预测前必须重新拟合参数。"""
 
-        dt_h = _finite_nonnegative(dt_h)
-        if not self.alive or dt_h <= 0:
+        if isinstance(dt_h, bool):
+            raise ValueError("培养单步时长必须是 0–6 h 内的有限数值。")
+        try:
+            dt_h = float(dt_h)
+        except (TypeError, ValueError):
+            raise ValueError("培养单步时长必须是 0–6 h 内的有限数值。") from None
+        if not isfinite(dt_h) or dt_h < 0.0 or dt_h > 6.0:
+            raise ValueError("培养单步时长必须是 0–6 h 内的有限数值。")
+        if dt_h == 0.0:
             return
-        dt_h = min(dt_h, 6.0)
         # 状态可来自 CSV/恢复文件；推进前统一裁剪，避免单个无效值污染后续历史。
         for name in ("viable_cells", "dead_cells", "glucose_mm", "glutamine_mm", "lactate_mm", "oxygen_percent", "drug_um"):
             setattr(self, name, _finite_nonnegative(getattr(self, name)))
         self.oxygen_percent = min(21.0, self.oxygen_percent)
+        self.oxygen_setpoint_percent = min(21.0, _finite_nonnegative(self.oxygen_setpoint_percent, 18.6))
         self.ph = min(8.0, max(6.2, _finite_nonnegative(self.ph, 7.4)))
+        self.temperature_c = min(50.0, _finite_nonnegative(self.temperature_c, self.profile.temperature_c))
+        self.co2_percent = min(100.0, _finite_nonnegative(self.co2_percent, self.profile.co2_percent))
+        self.osmolality_mosm_kg = min(1000.0, _finite_nonnegative(self.osmolality_mosm_kg, 300.0))
+        self.energy_index = min(100.0, _finite_nonnegative(self.energy_index, 100.0))
+        self.time_h = _finite_nonnegative(self.time_h)
+        self.last_growth_rate_per_h = _finite_nonnegative(self.last_growth_rate_per_h)
+        self.last_death_rate_per_h = _finite_nonnegative(self.last_death_rate_per_h)
+        if not self.alive:
+            return
         p = self.parameters
         modifiers = self.growth_modifiers()
         mu_max = log(2.0) / self.profile.doubling_time_h
@@ -236,6 +253,14 @@ class CellCulture:
         self.time_h += dt_h
         self.last_growth_rate_per_h = mu
         self.last_death_rate_per_h = death_rate
+
+    def _validate_finite_parameters(self) -> None:
+        for field in fields(ModelParameters):
+            value = getattr(self.parameters, field.name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"模型参数 {field.name} 必须是有限数值。")
+            if not isfinite(value):
+                raise ValueError(f"模型参数 {field.name} 必须是有限数值。")
 
     def exchange_medium(self, fraction: float = 1.0) -> None:
         """更换指定比例培养基，1.0 表示全量换液。"""

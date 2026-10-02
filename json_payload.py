@@ -1,0 +1,38 @@
+"""Safely decode user-supplied JSON objects without exposing raw file contents."""
+
+import json
+
+
+def decode_json_object(payload: bytes | str | dict) -> dict:
+    """Return a JSON object or raise a concise ValueError for malformed input."""
+
+    if isinstance(payload, bytes):
+        try:
+            payload = payload.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            raise ValueError("场景文件不是 UTF-8 编码的 JSON；请重新保存后导入。") from None
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(
+                payload,
+                parse_constant=lambda value: _reject_nonstandard_constant(value),
+                object_pairs_hook=_unique_keys,
+            )
+        except json.JSONDecodeError as error:
+            raise ValueError(f"场景 JSON 格式错误：第 {error.lineno} 行、第 {error.colno} 列。") from None
+    if not isinstance(payload, dict):
+        raise ValueError("场景根节点必须是 JSON 对象。")
+    return payload
+
+
+def _reject_nonstandard_constant(value: str) -> None:
+    raise ValueError(f"场景 JSON 不支持 {value}；请使用有限数值或 null。")
+
+
+def _unique_keys(pairs: list[tuple[str, object]]) -> dict:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("场景 JSON 包含重复字段名；请删除重复项后重新导入。")
+        result[key] = value
+    return result

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from copy import deepcopy
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -10,6 +9,7 @@ from math import isfinite
 from typing import Any
 
 from intracellular import IntracellularState
+from json_payload import decode_json_object
 from microcolony import MicrocolonyState, RepresentativeCell
 from microenvironment import MicroenvironmentState
 from version import MODEL_VERSION
@@ -310,12 +310,7 @@ def import_microcolony_scenario(payload: bytes | str | dict) -> tuple[Microcolon
 
 
 def _decode(payload: bytes | str | dict) -> dict:
-    if isinstance(payload, bytes):
-        payload = payload.decode("utf-8-sig")
-    data = json.loads(payload) if isinstance(payload, str) else payload
-    if not isinstance(data, dict):
-        raise ValueError("场景根节点必须是 JSON 对象。")
-    return data
+    return decode_json_object(payload)
 
 
 def _check_common(data: dict, schema: str) -> None:

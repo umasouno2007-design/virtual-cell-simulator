@@ -1,11 +1,11 @@
 """人类可读、可校验的培养情景配置；不保存原始 CSV。"""
-import json
 import re
 from copy import deepcopy
 from math import isfinite
 from dataclasses import asdict
 from datetime import datetime, timezone
 from cell import CellCulture, ModelParameters
+from json_payload import decode_json_object
 from profiles import CELL_PROFILES
 from version import MODEL_VERSION, SCENARIO_SCHEMA_VERSION
 
@@ -56,9 +56,7 @@ def export_scenario(
 
 def import_scenario(payload: bytes | str | dict) -> tuple[CellCulture, dict]:
     """校验并恢复场景，单位见 SCENARIO_FORMAT.md；非法输入抛出可读 ValueError。"""
-    if isinstance(payload, bytes): payload = payload.decode("utf-8-sig")
-    data = json.loads(payload) if isinstance(payload, str) else payload
-    if not isinstance(data, dict): raise ValueError("场景根节点必须是 JSON 对象。")
+    data = decode_json_object(payload)
     missing = REQUIRED.difference(data)
     if missing: raise ValueError("场景缺少字段：" + "、".join(sorted(missing)))
     if data["schema"] != SCENARIO_SCHEMA_VERSION: raise ValueError("不支持的场景格式版本。")
