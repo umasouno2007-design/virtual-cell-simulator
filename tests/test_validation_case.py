@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from scripts.validate_a549_teaching_case import run_case
+from version import MODEL_VERSION
 
 
 class ValidationCaseTestCase(unittest.TestCase):
@@ -11,6 +12,8 @@ class ValidationCaseTestCase(unittest.TestCase):
         result = run_case(output_dir=None)
 
         self.assertEqual(result["data_kind"], "teaching_synthetic_not_experimental")
+        self.assertEqual(result["model_version"], MODEL_VERSION)
+        self.assertEqual(result["data_source"], "data/a549_teaching_synthetic.csv")
         self.assertEqual(result["training_time_h"], [0.0, 12.0, 24.0, 36.0])
         self.assertEqual(result["validation_time_h"], [48.0, 60.0, 72.0])
         self.assertGreaterEqual(len(result["training_metrics"]), 2)

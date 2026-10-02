@@ -7,6 +7,7 @@ CSV 对齐、透明两参数粗校准、误差汇总与可视化流程可以重�
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import sys
 
@@ -63,7 +64,7 @@ def run_case(data_path: Path = DEFAULT_DATA, output_dir: Path | None = None) -> 
         "model_version": MODEL_VERSION,
         "case": "A549 teaching synthetic holdout validation",
         "data_kind": "teaching_synthetic_not_experimental",
-        "data_source": str(data_path.relative_to(ROOT)) if data_path.is_relative_to(ROOT) else str(data_path),
+        "data_source": data_path.relative_to(ROOT).as_posix() if data_path.is_relative_to(ROOT) else str(data_path),
         "training_time_h": list(TRAIN_TIMES),
         "validation_time_h": list(VALIDATION_TIMES),
         "fitted_parameters": {
@@ -81,7 +82,9 @@ def run_case(data_path: Path = DEFAULT_DATA, output_dir: Path | None = None) -> 
         pd.DataFrame(result["validation_metrics"]).to_csv(output_dir / "validation_metrics.csv", index=False)
         train_comparison.to_csv(output_dir / "training_comparison.csv", index=False)
         validation_comparison.to_csv(output_dir / "validation_comparison.csv", index=False)
-        pd.Series(result).to_json(output_dir / "summary.json", force_ascii=False, indent=2)
+        (output_dir / "summary.json").write_text(
+            json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8",
+        )
         figure, axes = plt.subplots(1, 2, figsize=(10, 4.2), constrained_layout=True)
         # 图中使用 ASCII 标签，避免最小化 CI 环境缺少中文字体而生成空白字形。
         series = (("viable_cells", "Viable cells (cells)"), ("glucose_mM", "Glucose (mM)"))
