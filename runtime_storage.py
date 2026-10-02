@@ -4,7 +4,7 @@ Files are convenience caches, not durable records or a cross-device account stor
 """
 
 from hashlib import sha256
-from math import isfinite
+from math import isclose, isfinite
 from pathlib import Path
 
 from cell import CellCulture
@@ -81,6 +81,12 @@ def restore_culture_checkpoint(payload: dict) -> tuple[CellCulture, list[dict]]:
         previous_time = row["time_h"]
     if abs(previous_time - cell.time_h) > 1e-6:
         raise ValueError("运行检查点的当前时钟与时间线末点不一致。")
+    last_row = history[-1]
+    for name, current in expected.items():
+        if name == "cell_type":
+            continue
+        if not isclose(float(last_row[name]), float(current), rel_tol=1e-9, abs_tol=1e-6):
+            raise ValueError(f"运行检查点的当前培养状态与时间线末点不一致：{name}。")
     return cell, history
 
 

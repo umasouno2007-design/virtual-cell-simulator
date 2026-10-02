@@ -2,10 +2,29 @@ import unittest
 
 from scenario import export_scenario, import_scenario
 from cell import CellCulture
+from experiment_data import measurement_fingerprint
 from version import MODEL_VERSION
 
 
 class ScenarioTests(unittest.TestCase):
+    def test_optional_data_fingerprint_round_trips_without_raw_csv(self):
+        fingerprint = measurement_fingerprint(b"time_h,viable_cells\n0,100\n24,200\n")
+        payload = export_scenario(CellCulture("a549"), data_file_fingerprint=fingerprint)
+        self.assertEqual(payload["data_file_fingerprint"], fingerprint)
+        self.assertNotIn("raw_csv", payload)
+        _, restored = import_scenario(payload)
+        self.assertEqual(restored["data_file_fingerprint"], fingerprint)
+
+    def test_invalid_data_fingerprint_is_rejected_on_export_and_import(self):
+        for invalid in ("not-a-hash", "A" * 64, True):
+            with self.subTest(fingerprint=invalid):
+                with self.assertRaisesRegex(ValueError, "数据文件指纹"):
+                    export_scenario(CellCulture("a549"), data_file_fingerprint=invalid)
+                payload = export_scenario(CellCulture("a549"))
+                payload["data_file_fingerprint"] = invalid
+                with self.assertRaisesRegex(ValueError, "数据文件指纹"):
+                    import_scenario(payload)
+
     def test_export_import_replays_same_step(self):
         original = CellCulture("a549")
         original.oxygen_percent = 12.0

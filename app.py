@@ -1853,6 +1853,12 @@ def scenario_panel(cell) -> None:
             dt_h=float(st.session_state.get("scenario_dt_h", 1)),
             events=st.session_state.get("scheduled_actions", []),
             calibration_status="已计算透明粗校准候选；是否应用请查操作事件" if st.session_state.get("coarse_calibration") else "当前无粗校准候选",
+            data_file_fingerprint=(
+                st.session_state.get("measurement_data_fingerprint")
+                if st.session_state.get("measurement_data") is not None
+                and st.session_state.get("measurement_data_profile_key") == cell.profile_key
+                else None
+            ),
         )
         st.download_button(
             "导出当前场景 JSON", data=json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),

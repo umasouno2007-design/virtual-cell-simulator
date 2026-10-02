@@ -59,6 +59,12 @@ class RuntimeStorageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "单调"):
             restore_culture_checkpoint(payload)
 
+    def test_checkpoint_rejects_last_history_state_mismatch(self):
+        payload = self._checkpoint()
+        payload["history"][-1]["glucose_mM"] -= 1.0
+        with self.assertRaisesRegex(ValueError, "当前培养状态与时间线末点不一致"):
+            restore_culture_checkpoint(payload)
+
     def test_invalid_runtime_clock_cannot_enter_realtime_catch_up(self):
         valid = {"last_wall_time": 1000.0, "time_multiplier": 60}
         self.assertEqual(restore_runtime_clock(valid, {1, 60}), (1000.0, 60))
