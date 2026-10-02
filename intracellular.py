@@ -7,15 +7,21 @@ ATP/膜电位/ROS、UPR、DNA 损伤、自噬和促凋亡压力之间的调节�
 完整证据边界与来源见 ``evidence.py``。
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
+from math import isfinite
 from typing import Dict, TYPE_CHECKING
+
+from microenvironment import MicroenvironmentState
 
 if TYPE_CHECKING:
     from cell import CellCulture
 
 
 def _bounded(value: float, low: float = 0.0, high: float = 100.0) -> float:
-    return max(low, min(high, float(value)))
+    numeric = float(value)
+    return max(low, min(high, numeric)) if isfinite(numeric) else low
 
 
 @dataclass
@@ -37,24 +43,36 @@ class IntracellularState:
     cycle_progress_percent: float = 8.0
     cycle_phase: str = "G1"
 
-    def step(self, culture: "CellCulture", dt_h: float = 1.0) -> None:
+    def step(self, environment: MicroenvironmentState | "CellCulture", dt_h: float = 1.0) -> None:
         """根据培养环境推进细胞器与命运的相对指数。
 
-        ``culture.oxygen_percent`` 在本模块中是“局部氧可用性代理”，并不等同于
+        ``environment.local_oxygen_availability`` 是“局部氧可用性代理”，并不等同于
         培养箱头空间氧、培养液溶氧或组织生理氧。这里不是 ODE 生化网络，也不
         输出 ATP 浓度、膜电位 mV、自噬通量、DNA 损伤灶数或凋亡细胞比例。
-        所有线性组合只用于产生可解释的趋势与交互反馈。
+        所有线性组合只用于产生可解释的趋势与交互反馈。乳酸值随环境快照保存，
+        但当前没有被单细胞状态方程直接使用；其酸碱影响需通过独立 pH 输入表达。
         """
 
-        if dt_h <= 0:
+        try:
+            dt_h = float(dt_h)
+        except (TypeError, ValueError):
             return
-        dt_h = min(float(dt_h), 6.0)
-        # 该代理量来自单室培养模型；其换算、阈值和时间常数均为待校准教学规则。
-        local_oxygen_availability = _bounded(culture.oxygen_percent / 18.6, 0.0, 1.0)
-        glucose = _bounded(culture.glucose_mm / culture.profile.initial_glucose_mm, 0.0, 1.0)
-        ph_fitness = _bounded(1.0 - abs(culture.ph - 7.35) / 0.9, 0.0, 1.0)
-        thermal_fitness = _bounded(1.0 - abs(culture.temperature_c - 37.0) / 6.0, 0.0, 1.0)
-        drug_stress = culture.drug_um / (culture.drug_um + culture.parameters.drug_ic50_um)
+        if not isfinite(dt_h) or dt_h <= 0:
+            return
+        dt_h = min(dt_h, 6.0)
+        # 兼容旧调用：现有培养工作流继续传入 CellCulture；新单细胞/微群体只传入环境。
+        microenvironment = (
+            environment if isinstance(environment, MicroenvironmentState)
+            else MicroenvironmentState.from_culture(environment)
+        ).normalized()
+        local_oxygen_availability = microenvironment.local_oxygen_availability
+        glucose = _bounded(
+            microenvironment.glucose_mm / microenvironment.glucose_reference_mm,
+            0.0, 1.0,
+        )
+        ph_fitness = _bounded(1.0 - abs(microenvironment.ph - 7.35) / 0.9, 0.0, 1.0)
+        thermal_fitness = _bounded(1.0 - abs(microenvironment.temperature_c - 37.0) / 6.0, 0.0, 1.0)
+        drug_stress = microenvironment.drug_um / (microenvironment.drug_um + microenvironment.drug_ic50_um)
 
         mitochondrial_target = 22.0 + 72.0 * local_oxygen_availability * thermal_fitness * (1.0 - 0.45 * drug_stress)
         # 低氧下的糖酵解补偿是方向性教学规则，不能解读为任意细胞系的定量通量。
@@ -91,7 +109,7 @@ class IntracellularState:
             0.58 * self.atp_percent + 34.0 * glucose - 0.28 * self.er_stress_percent
         )
         self.growth_signal_percent = _bounded(
-            45.0 * glucose + 32.0 * ph_fitness + 23.0 * (1.0 - culture.confluence_percent / 100.0)
+            45.0 * glucose + 32.0 * ph_fitness + 23.0 * (1.0 - microenvironment.local_confluence_percent / 100.0)
         )
         # 促凋亡压力相对指数，不是凋亡阳性细胞比例、caspase 活性或死亡结局。
         apoptosis_target = _bounded(
@@ -108,7 +126,7 @@ class IntracellularState:
 
         if self.apoptosis_signal_percent < 70.0 and self.atp_percent > 25.0:
             speed = self.growth_signal_percent / 100.0
-            self.cycle_progress_percent = (self.cycle_progress_percent + 100.0 * dt_h * speed / culture.profile.doubling_time_h) % 100.0
+            self.cycle_progress_percent = (self.cycle_progress_percent + 100.0 * dt_h * speed / microenvironment.doubling_time_h) % 100.0
         self.cycle_phase = self._phase_from_progress(self.cycle_progress_percent)
 
         for name in (

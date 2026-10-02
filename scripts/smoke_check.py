@@ -1,16 +1,110 @@
-"""部署前无网页 smoke check。"""
+"""部署前无网页 smoke check：培养、单细胞、微群体与场景往返。"""
+
 from pathlib import Path
 import sys
-ROOT = Path(__file__).resolve().parents[1]; sys.path.insert(0, str(ROOT))
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
 from cell import CellCulture
+from cell_scenario import (
+    environment_change_event,
+    export_microcolony_scenario,
+    export_single_cell_scenario,
+    import_microcolony_scenario,
+    import_single_cell_scenario,
+    single_cell_history_row,
+)
 from experiment_manifest import build_manifest
+from intracellular import IntracellularState
+from microcolony import MicrocolonyState
+from microenvironment import MicroenvironmentState
+from scenario import import_scenario
 from scripts.validate_a549_teaching_case import run_case
 
-def main():
+
+def _single_cell_run() -> tuple[IntracellularState, MicroenvironmentState, list[dict], list[dict]]:
+    environment = MicroenvironmentState(local_oxygen_availability=0.65, glucose_mm=4.0)
+    state = IntracellularState()
+    history = [single_cell_history_row(state, environment)]
+    events = []
+    for hours in (1.0, 2.0, 1.0):
+        state.step(environment, hours)
+        environment.time_h = state.time_h
+        history.append(single_cell_history_row(state, environment))
+        if state.time_h == 1.0:
+            previous = environment.snapshot()
+            environment.local_oxygen_availability = 0.55
+            events.append(environment_change_event(previous, environment, state.time_h))
+    state.apply_oxidative_stress(20.0)
+    history.append(single_cell_history_row(state, environment))
+    events.append({
+        "time_h": state.time_h,
+        "event": "教学性氧化压力脉冲",
+        "event_type": "oxidative_stress",
+        "input_index": 20.0,
+        "environment": environment.snapshot(),
+    })
+    return state, environment, history, events
+
+
+def main() -> None:
     assert (ROOT / "data" / "a549_teaching_synthetic.csv").is_file()
-    cell = CellCulture("a549"); cell.step(1)
-    assert cell.snapshot()["time_h"] == 1
-    assert build_manifest(cell, app_version="smoke", preset_name="标准培养", app_mode="细胞培养", time_multiplier=60, history=[cell.snapshot()], events=[])["experiment"]["profile_key"] == "a549"
+    example_scene = ROOT / "data" / "example_a549_scenario.json"
+    assert example_scene.is_file()
+    restored_example, _ = import_scenario(example_scene.read_text(encoding="utf-8"))
+    assert restored_example.profile_key == "a549"
+
+    # 原培养动力学和实验清单仍可运行。
+    culture = CellCulture("a549")
+    culture.step(1)
+    assert culture.snapshot()["time_h"] == 1
+    manifest = build_manifest(
+        culture,
+        app_version="smoke",
+        preset_name="标准培养",
+        app_mode="培养环境与数据工作流",
+        time_multiplier=60,
+        history=[culture.snapshot()],
+        events=[],
+    )
+    assert manifest["experiment"]["profile_key"] == "a549"
     assert run_case(output_dir=None)["validation_metrics"]
+
+    # 相同环境与步长必须产生确定性相同结果，且场景状态可往返恢复。
+    first_state, first_env, first_history, first_events = _single_cell_run()
+    second_state, _, _, _ = _single_cell_run()
+    assert first_state.snapshot() == second_state.snapshot()
+    single_payload = export_single_cell_scenario(first_env, first_state, first_history, first_events)
+    restored_env, restored_state, restored_history, restored_events = import_single_cell_scenario(single_payload)
+    assert restored_state.snapshot() == first_state.snapshot()
+    assert restored_env.time_h == first_env.time_h
+    assert restored_history == first_history
+    assert restored_events == first_events
+    assert single_payload["history_starts_at_zero"]
+    assert all(row["environment_recorded"] for row in restored_history)
+    first_state.step(first_env, 0.5)
+    restored_state.step(restored_env, 0.5)
+    assert first_state.snapshot() == restored_state.snapshot()
+
+    # 微型群体与其场景 schema 在无 Streamlit 界面时也能工作。
+    colony = MicrocolonyState(cell_count=8, communication_enabled=True)
+    colony_env = MicroenvironmentState(local_oxygen_availability=0.5, glucose_mm=3.0)
+    for _ in range(3):
+        colony.step(colony_env, 1.0)
+    assert colony.finite()
+    subgroup_trajectory = colony.subgroup_trajectory()
+    for time_h in {row["time_h"] for row in subgroup_trajectory}:
+        rows = [row for row in subgroup_trajectory if row["time_h"] == time_h]
+        assert len(rows) == 4
+        assert abs(sum(row["占该时点记录比例（%）"] for row in rows) - 100.0) < 1e-9
+    colony_payload = export_microcolony_scenario(colony, colony_env)
+    restored_colony, _ = import_microcolony_scenario(colony_payload)
+    assert restored_colony.summary() == colony.summary()
+    assert restored_colony.history == colony.history
+
     print("smoke check passed")
-if __name__ == "__main__": main()
+
+
+if __name__ == "__main__":
+    main()

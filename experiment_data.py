@@ -4,6 +4,7 @@
 列映射和残差可以被审阅，后续参数拟合也能复用同一套输入。
 """
 
+from hashlib import sha256
 from io import BytesIO
 from typing import Iterable
 
@@ -29,6 +30,12 @@ _ALIASES = {
     "pH": ("ph",),
     "oxygen_percent": ("oxygen_percent", "oxygen", "do", "dissolved oxygen", "氧", "溶氧", "溶氧%", "氧（%）"),
 }
+
+
+def measurement_fingerprint(contents: bytes) -> str:
+    """Return a stable SHA-256 identity for uploaded CSV bytes (not a privacy/security token)."""
+
+    return sha256(contents).hexdigest()
 
 
 def _normalized_header(value: object) -> str:
@@ -62,6 +69,8 @@ def standardize_measurements(contents: bytes) -> tuple[pd.DataFrame, list[str]]:
     if "time_h" not in mapped:
         raise ValueError("未找到时间列。请使用 time_h、time、hour 或“时间”。")
     data = pd.DataFrame({target: pd.to_numeric(raw[source], errors="coerce") for target, source in mapped.items()})
+    invalid_time_count = int(data["time_h"].isna().sum())
+    nonmonotonic_time_count = int(data["time_h"].diff().lt(0).sum())
     data = data.dropna(subset=["time_h"]).sort_values("time_h")
     duplicate_time_count = int(data["time_h"].duplicated(keep=False).sum())
     data = data.drop_duplicates("time_h", keep="last")
@@ -71,6 +80,10 @@ def standardize_measurements(contents: bytes) -> tuple[pd.DataFrame, list[str]]:
     data = data.dropna(axis=1, how="all")
     recognized = "、".join(FIELD_LABELS[field] for field in numeric_fields if field in data.columns)
     notes = [f"已识别 {len(data)} 个时间点。"]
+    if invalid_time_count:
+        notes.append(f"原始 CSV 有 {invalid_time_count} 行时间缺失或无法解析；标准化副本未纳入这些行，质量检查会阻止用于对齐/校准。")
+    if nonmonotonic_time_count:
+        notes.append(f"原始 CSV 有 {nonmonotonic_time_count} 处时间倒序；标准化副本按时间排序，请核对原始记录。")
     if duplicate_time_count:
         notes.append(f"检测到 {duplicate_time_count} 行重复时间；标准化副本保留每个时间的最后一行，原始文件未被修改。")
     notes.append(f"已识别测量指标：{recognized}" if recognized else "只识别到时间列，暂无可比较的测量指标。")
@@ -79,6 +92,8 @@ def standardize_measurements(contents: bytes) -> tuple[pd.DataFrame, list[str]]:
         notes.append(f"未用于比较的列：{'、'.join(ignored)}。")
     data = data.reset_index(drop=True)
     data.attrs["duplicate_time_count"] = duplicate_time_count
+    data.attrs["invalid_time_count"] = invalid_time_count
+    data.attrs["nonmonotonic_time_count"] = nonmonotonic_time_count
     return data, notes
 
 

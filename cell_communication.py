@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from math import isfinite
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -18,7 +19,8 @@ if TYPE_CHECKING:
 def _clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
     """将教学性相对指数限制在有限范围内。"""
 
-    return max(low, min(high, float(value)))
+    numeric = float(value)
+    return max(low, min(high, numeric)) if isfinite(numeric) else low
 
 
 @dataclass

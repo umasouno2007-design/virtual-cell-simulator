@@ -2,6 +2,7 @@ import unittest
 
 from scenario import export_scenario, import_scenario
 from cell import CellCulture
+from version import MODEL_VERSION
 
 
 class ScenarioTests(unittest.TestCase):
@@ -16,6 +17,36 @@ class ScenarioTests(unittest.TestCase):
         self.assertAlmostEqual(original.viable_cells, restored.viable_cells, places=7)
         self.assertAlmostEqual(original.glucose_mm, restored.glucose_mm, places=7)
 
+    def test_evolved_culture_resumes_with_full_state(self):
+        original = CellCulture("a549")
+        original.step(4.0)
+        original.add_drug(2.0)
+        payload = export_scenario(original)
+        restored, _ = import_scenario(payload)
+        for field in ("time_h", "viable_cells", "dead_cells", "energy_index", "drug_um"):
+            self.assertAlmostEqual(getattr(original, field), getattr(restored, field))
+        original.step(2.0)
+        restored.step(2.0)
+        for field in ("time_h", "viable_cells", "dead_cells", "glucose_mm", "lactate_mm"):
+            self.assertAlmostEqual(getattr(original, field), getattr(restored, field), places=7)
+
+    def test_legacy_scene_without_resume_state_starts_at_zero(self):
+        payload = export_scenario(CellCulture("a549"))
+        payload.pop("resume_state")
+        restored, _ = import_scenario(payload)
+        self.assertEqual(restored.time_h, 0.0)
+        self.assertEqual(restored.dead_cells, 0.0)
+
+    def test_invalid_resume_state_is_rejected(self):
+        payload = export_scenario(CellCulture("a549"))
+        for name, value in (("time_h", -1), ("dead_cells", float("inf")),
+                            ("energy_index", 101), ("last_growth_rate_per_h", True)):
+            with self.subTest(name=name):
+                payload["resume_state"][name] = value
+                with self.assertRaisesRegex(ValueError, "续跑状态"):
+                    import_scenario(payload)
+                payload = export_scenario(CellCulture("a549"))
+
     def test_missing_field_is_explained(self):
         with self.assertRaisesRegex(ValueError, "缺少字段"):
             import_scenario({"schema": "e-cell-scenario/v1"})
@@ -24,4 +55,96 @@ class ScenarioTests(unittest.TestCase):
         payload = export_scenario(CellCulture("a549"))
         payload["run"]["dt_h"] = -1
         with self.assertRaisesRegex(ValueError, "总时长或步长"):
+            import_scenario(payload)
+
+    def test_out_of_ui_environment_bounds_is_rejected(self):
+        payload = export_scenario(CellCulture("a549"))
+        payload["environment"]["pH"] = 9.0
+        with self.assertRaisesRegex(ValueError, "超出当前模型界面范围"):
+            import_scenario(payload)
+
+    def test_incomplete_or_unknown_model_parameters_are_rejected(self):
+        missing = export_scenario(CellCulture("a549"))
+        missing["parameters"].pop("growth_scale")
+        with self.assertRaisesRegex(ValueError, "模型参数不完整"):
+            import_scenario(missing)
+
+        unknown = export_scenario(CellCulture("a549"))
+        unknown["parameters"]["unrecognized_parameter"] = 1.0
+        with self.assertRaisesRegex(ValueError, "未知参数"):
+            import_scenario(unknown)
+
+    def test_invalid_initial_cell_count_is_not_silently_replaced(self):
+        payload = export_scenario(CellCulture("a549"))
+        payload["cell"]["initial_viable_cells"] = float("nan")
+        with self.assertRaisesRegex(ValueError, "有限非负数"):
+            import_scenario(payload)
+
+    def test_invalid_scheduled_event_is_rejected_before_ui_execution(self):
+        payload = export_scenario(CellCulture("a549"))
+        payload["events"] = [{"at_time_h": 12, "action": "unknown", "value": 1}]
+        with self.assertRaisesRegex(ValueError, "类型不受支持"):
+            import_scenario(payload)
+
+        payload["events"] = [{"at_time_h": float("inf"), "action": "补充葡萄糖", "value": 1}]
+        with self.assertRaisesRegex(ValueError, "有限非负小时数"):
+            import_scenario(payload)
+
+    def test_valid_scheduled_event_round_trips(self):
+        event = {"at_time_h": 12.0, "action": "补充葡萄糖", "value": 1.0, "status": "pending"}
+        payload = export_scenario(CellCulture("a549"), events=[event])
+        _, imported = import_scenario(payload)
+        self.assertEqual(imported["events"], [event])
+
+    def test_exported_events_do_not_alias_session_actions(self):
+        event = {"at_time_h": 12.0, "action": "补充葡萄糖", "value": 1.0, "status": "pending"}
+        payload = export_scenario(CellCulture("a549"), events=[event])
+        payload["events"][0]["value"] = 4.0
+        self.assertEqual(event["value"], 1.0)
+
+    def test_event_timing_must_match_resumed_clock(self):
+        cell = CellCulture("a549")
+        cell.step(6.0)
+        payload = export_scenario(cell, events=[{
+            "at_time_h": 2.0, "action": "补充葡萄糖", "value": 1.0, "status": "pending",
+        }])
+        with self.assertRaisesRegex(ValueError, "早于续跑起点"):
+            import_scenario(payload)
+        payload["events"][0]["status"] = "executed"
+        payload["events"][0]["executed_at_h"] = 7.0
+        with self.assertRaisesRegex(ValueError, "晚于续跑起点"):
+            import_scenario(payload)
+
+    def test_wrong_json_types_return_validation_errors_not_type_errors(self):
+        bad_profile = export_scenario(CellCulture("a549"))
+        bad_profile["cell"]["profile_key"] = []
+        with self.assertRaisesRegex(ValueError, "未知细胞系"):
+            import_scenario(bad_profile)
+
+        bad_action = export_scenario(CellCulture("a549"))
+        bad_action["events"] = [{"at_time_h": 0, "action": [], "value": 1}]
+        with self.assertRaisesRegex(ValueError, "类型不受支持"):
+            import_scenario(bad_action)
+
+        bad_status = export_scenario(CellCulture("a549"))
+        bad_status["events"] = [{"at_time_h": 0, "action": "补充葡萄糖", "value": 1, "status": []}]
+        with self.assertRaisesRegex(ValueError, "状态不受支持"):
+            import_scenario(bad_status)
+
+    def test_scenario_from_another_model_version_is_not_silently_loaded(self):
+        payload = export_scenario(CellCulture("a549"))
+        payload["model_version"] = "0.0.0"
+        with self.assertRaisesRegex(ValueError, "场景模型版本为"):
+            import_scenario(payload)
+        self.assertNotEqual(MODEL_VERSION, payload["model_version"])
+
+    def test_boolean_is_not_accepted_as_numeric_scenario_input(self):
+        payload = export_scenario(CellCulture("a549"))
+        payload["cell"]["initial_viable_cells"] = True
+        with self.assertRaisesRegex(ValueError, "initial_viable_cells"):
+            import_scenario(payload)
+
+        payload = export_scenario(CellCulture("a549"))
+        payload["events"] = [{"at_time_h": 12, "action": "补充葡萄糖", "value": True}]
+        with self.assertRaisesRegex(ValueError, "缺少有效的执行时间或操作量"):
             import_scenario(payload)

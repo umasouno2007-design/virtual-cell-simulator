@@ -7,4 +7,6 @@ venv/
 .runtime_state.json
 .runtime_state.json.tmp
 .runtime_state.json.*.tmp
+.runtime_state.*.json
+.runtime_state.*.json.*.tmp
 validation_outputs/

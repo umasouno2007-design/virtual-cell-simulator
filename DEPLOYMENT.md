@@ -49,7 +49,7 @@ python scripts/smoke_check.py
 
 - 不要提交 `.streamlit/secrets.toml`、令牌、密码、患者资料、可识别供体资料、未公开实验数据或内部仪器日志。
 - `data/a549_teaching_synthetic.csv` 是公开可分发的教学合成数据；不能替换为真实实验数据后仍沿用其“教学合成”表述。
-- Streamlit Cloud 的本地文件存储是临时的；配置快照、CSV 和事件记录应及时下载保存，不应被当作 GLP/GMP 审计系统。
+- Streamlit Cloud 的本地文件存储是临时的。运行检查点按浏览器会话隔离，旧版共享 `.runtime_state.json` 不再读取，避免不同访客互相恢复状态；新浏览器会话或云端重启不保证自动恢复。需要复现时应主动下载场景 JSON、结果 CSV 和事件记录；它们也不是 GLP/GMP 审计系统。
 
 ## 上线后人工验证
 

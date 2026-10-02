@@ -13,16 +13,25 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
+from runtime_storage import restore_culture_checkpoint, session_state_path
 
 from intracellular import IntracellularState, intracellular_status
 from cell_communication import CellCommunicationState, representative_subpopulation_points
+from microenvironment import MicroenvironmentState
+from microcolony import MicrocolonyState
+from cell_scenario import (
+    add_traceability_fields, export_microcolony_scenario, export_single_cell_scenario,
+    environment_change_event, import_microcolony_scenario, import_single_cell_scenario,
+    single_cell_history_row, truncate_microcolony_scenario_history,
+)
 from evidence import REFERENCES, evidence_rows
-from calibration import fit_growth_and_uptake
+from calibration import fit_with_temporal_holdout
 from experiment_data import (
     FIELD_LABELS,
     comparison_frame,
     observed_fields,
     residual_summary,
+    measurement_fingerprint,
     standardize_measurements,
 )
 from experiment_manifest import build_manifest
@@ -32,6 +41,7 @@ from cell_cycle_navigation import next_cycle_checkpoint
 from observability import OBSERVABLES, observability_rows
 from virtual_assays import ASSAYS, simulate_virtual_assay
 from sensitivity import PENDING_MEASUREMENT_PARAMETERS, SENSITIVITY_PARAMETERS, run_sensitivity
+from state_reporting import intracellular_change_summary
 from data_quality import quality_report
 from scenario import export_scenario, import_scenario
 from version import MODEL_VERSION
@@ -254,7 +264,7 @@ st.markdown(
 
 # 运行时状态格式与科学模型版本分开：前者可因持久化结构变化而调整，后者用于结果可追溯。
 # 保持此值可兼容已有本机运行状态；科学输出统一使用 MODEL_VERSION。
-APP_STATE_VERSION = "1.0-alpha.9"
+APP_STATE_VERSION = "1.1.0"
 RUNTIME_STATE_PATH = Path(__file__).with_name(".runtime_state.json")
 MAX_HISTORY_POINTS = 2000
 
@@ -343,11 +353,11 @@ PERSISTED_CELL_FIELDS = (
 )
 
 
-def persistence_enabled() -> bool:
-    """测试运行不读写用户的连续培养状态。"""
+def runtime_state_path() -> Path | None:
+    """每个浏览器会话独立保存；绝不从其他访客的全局状态文件恢复。"""
 
     context = get_script_run_ctx(suppress_warning=True)
-    return context is None or context.session_id != "test session id"
+    return session_state_path(RUNTIME_STATE_PATH, context.session_id if context else None)
 
 
 # 这些字段是当前界面的模型校准控件必须使用的参数。
@@ -374,7 +384,8 @@ ENVIRONMENT_WIDGET_KEYS = (
 def save_runtime_state() -> None:
     """保存连续培养状态，使页面离开后仍可按真实经过时间补算。"""
 
-    if not persistence_enabled():
+    state_path = runtime_state_path()
+    if state_path is None:
         return
     cell = st.session_state.get("cell")
     if cell is None:
@@ -405,18 +416,33 @@ def save_runtime_state() -> None:
         "events": st.session_state.get("events", [])[-500:],
         "scheduled_actions": st.session_state.get("scheduled_actions", [])[-100:],
         "experiment_metadata": st.session_state.get("experiment_metadata", {}),
+        "microcolony_history": st.session_state.get("microcolony_history", [])[-MAX_HISTORY_POINTS:],
     }
+    if "single_cell_state" in st.session_state and "single_cell_environment" in st.session_state:
+        payload["single_cell_scenario"] = export_single_cell_scenario(
+            st.session_state.single_cell_environment,
+            st.session_state.single_cell_state,
+            st.session_state.get("single_cell_history", [])[-MAX_HISTORY_POINTS:],
+            st.session_state.get("single_cell_events", [])[-500:],
+        )
+    if "microcolony" in st.session_state and "single_cell_environment" in st.session_state:
+        colony_payload = export_microcolony_scenario(
+            st.session_state.microcolony, st.session_state.single_cell_environment,
+        )
+        payload["microcolony_scenario"] = truncate_microcolony_scenario_history(
+            colony_payload, 5_000,
+        )
     # Streamlit 的定时 fragment 和按钮回调可能并发保存。同名临时文件会被
     # 另一个执行流先移动，从而在 Cloud 上触发 FileNotFoundError。
-    temporary_path = RUNTIME_STATE_PATH.with_name(
-        f"{RUNTIME_STATE_PATH.name}.{uuid4().hex}.tmp"
+    temporary_path = state_path.with_name(
+        f"{state_path.name}.{uuid4().hex}.tmp"
     )
     try:
         temporary_path.write_text(
             json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
             encoding="utf-8",
         )
-        temporary_path.replace(RUNTIME_STATE_PATH)
+        temporary_path.replace(state_path)
     except OSError:
         # 云端文件系统是临时存储；保存失败不应中断正在运行的培养界面。
         return
@@ -427,26 +453,16 @@ def save_runtime_state() -> None:
 def load_runtime_state() -> bool:
     """恢复上次连续培养；文件无效时安全回退为新实验。"""
 
-    if not persistence_enabled() or not RUNTIME_STATE_PATH.exists():
+    state_path = runtime_state_path()
+    if state_path is None or not state_path.exists():
         return False
     try:
-        payload = json.loads(RUNTIME_STATE_PATH.read_text(encoding="utf-8"))
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
         if payload.get("version") != APP_STATE_VERSION:
             return False
-        cell, _ = new_simulation(payload.get("profile_key", "hela"))
-        for name, value in payload.get("cell", {}).items():
-            if name in PERSISTED_CELL_FIELDS:
-                setattr(cell, name, value)
-        for name, value in payload.get("parameters", {}).items():
-            if hasattr(cell.parameters, name):
-                setattr(cell.parameters, name, value)
-        history = payload.get("history")
+        cell, history = restore_culture_checkpoint(payload)
         st.session_state.cell = cell
-        st.session_state.history = (
-            history[-MAX_HISTORY_POINTS:]
-            if isinstance(history, list) and history
-            else [cell.snapshot()]
-        )
+        st.session_state.history = history[-MAX_HISTORY_POINTS:]
         st.session_state.profile_key = cell.profile_key
         st.session_state.preset_name = payload.get("preset_name", "标准培养")
         st.session_state.running = bool(payload.get("running", False)) and cell.alive
@@ -498,6 +514,31 @@ def load_runtime_state() -> bool:
         st.session_state.intracellular_notes = notes if isinstance(notes, list) else []
         discovered = payload.get("celldex_discovered", [])
         st.session_state.celldex_discovered = discovered if isinstance(discovered, list) else []
+        summary_history = payload.get("microcolony_history", [])
+        st.session_state.microcolony_history = summary_history if isinstance(summary_history, list) else []
+        single_scenario = payload.get("single_cell_scenario")
+        if isinstance(single_scenario, dict):
+            try:
+                env, state, history, events = import_single_cell_scenario(single_scenario)
+                st.session_state.single_cell_environment = env
+                st.session_state.single_cell_state = state
+                st.session_state.single_cell_history = history
+                st.session_state.single_cell_events = events
+            except (ValueError, TypeError, KeyError):
+                pass
+        micro_scenario = payload.get("microcolony_scenario")
+        if isinstance(micro_scenario, dict):
+            try:
+                colony, env = import_microcolony_scenario(micro_scenario)
+                st.session_state.microcolony = colony
+                if "single_cell_environment" not in st.session_state:
+                    st.session_state.single_cell_environment = env
+                st.session_state.microcolony_history = (
+                    summary_history if isinstance(summary_history, list) and summary_history
+                    else [colony.summary()]
+                )
+            except (ValueError, TypeError, KeyError):
+                pass
         metadata = payload.get("experiment_metadata", {})
         st.session_state.experiment_metadata = {
             **EXPERIMENT_METADATA_DEFAULTS,
@@ -523,6 +564,11 @@ def record_event(event: str, details: str = "") -> None:
     cell = st.session_state.get("cell")
     if cell is None:
         return
+    culture_actions = {"环境调整", "全量换液", "设置药物", "补充葡萄糖", "补充溶氧"}
+    scheduled_culture_actions = {f"计划执行：{name}" for name in ("补充葡萄糖", "补充溶氧", "部分换液", "设置药物")}
+    if event in culture_actions or event in scheduled_culture_actions:
+        # 候选参数来自干预前的培养轨迹；状态改变后不可继续称为当前结果。
+        st.session_state.pop("coarse_calibration", None)
     st.session_state.setdefault("events", []).append({
         "time_h": round(cell.time_h, 6),
         "simulation_time": format_simulation_time(cell.time_h),
@@ -725,8 +771,10 @@ def initialize_state() -> None:
         st.session_state.effect_until = 0.0
     if "effect_cycles_remaining" not in st.session_state:
         st.session_state.effect_cycles_remaining = 0
-    if "app_mode" not in st.session_state:
-        st.session_state.app_mode = "细胞培养"
+    if "app_mode" not in st.session_state or st.session_state.app_mode == "细胞生命活动":
+        st.session_state.app_mode = "单细胞实验室"
+    elif st.session_state.app_mode == "细胞培养":
+        st.session_state.app_mode = "培养环境与数据工作流"
     if "intracellular" not in st.session_state:
         st.session_state.intracellular = IntracellularState()
     if "intracellular_history" not in st.session_state:
@@ -741,6 +789,21 @@ def initialize_state() -> None:
         ]
     if "communication_feedback_enabled" not in st.session_state:
         st.session_state.communication_feedback_enabled = False
+    if "single_cell_environment" not in st.session_state:
+        st.session_state.single_cell_environment = MicroenvironmentState.from_culture(st.session_state.cell)
+    if "single_cell_state" not in st.session_state:
+        st.session_state.single_cell_state = IntracellularState()
+    if "single_cell_history" not in st.session_state:
+        st.session_state.single_cell_history = [single_cell_history_row(
+            st.session_state.single_cell_state, st.session_state.single_cell_environment,
+        )]
+    st.session_state.single_cell_environment.time_h = st.session_state.single_cell_state.time_h
+    if "single_cell_events" not in st.session_state:
+        st.session_state.single_cell_events = []
+    if "microcolony" not in st.session_state:
+        st.session_state.microcolony = MicrocolonyState()
+    if "microcolony_history" not in st.session_state or not st.session_state.microcolony_history:
+        st.session_state.microcolony_history = [st.session_state.microcolony.summary()]
     if "intracellular_samples" not in st.session_state:
         st.session_state.intracellular_samples = []
     if "intracellular_challenge" not in st.session_state:
@@ -783,6 +846,8 @@ def reset_simulation(profile_key: str, preset_name: str, volume: float, area: fl
     st.session_state.profile_key = profile_key
     st.session_state.preset_name = preset_name
     st.session_state.running = False
+    # 新培养设置使此前基于旧模拟轨迹得到的透明初值探索失效。
+    st.session_state.pop("coarse_calibration", None)
     st.session_state.intracellular = IntracellularState()
     st.session_state.intracellular_history = [
         st.session_state.intracellular.snapshot()
@@ -812,6 +877,9 @@ def update_environment(attribute: str, widget_key: str) -> None:
     """在页面主体渲染前把环境控件的新值同步到当前培养物。"""
 
     setattr(st.session_state.cell, attribute, st.session_state[widget_key])
+    # 同一时刻的环境调整是新的培养状态；历史应保留调整后的快照，
+    # 否则图表/校准起点仍读取旧环境。
+    st.session_state.history.append(st.session_state.cell.snapshot())
     record_event("环境调整", f"{attribute}={st.session_state[widget_key]}")
     if attribute == "oxygen_setpoint_percent":
         trigger_effect("oxygen")
@@ -835,9 +903,9 @@ def sidebar() -> None:
     st.sidebar.caption("全局视图与显示偏好")
     st.sidebar.radio(
         "模拟模式",
-        ["细胞培养", "细胞生命活动"],
+        ["单细胞实验室", "微型细胞群", "培养环境与数据工作流"],
         key="app_mode",
-        help="两个模式共享同一培养环境和模拟时钟。",
+        help="单细胞与微群体是教学性相对状态模型；培养模式保留经验动力学与数据工作流。",
     )
     st.sidebar.toggle("减少动态效果", key="reduce_motion", help="关闭气泡、能量脉冲等非必要动画。")
     st.sidebar.info("实验配置、运行控制与数据分析已移至主工作台。")
@@ -846,20 +914,65 @@ def sidebar() -> None:
 def render_experiment_context_bar(cell) -> None:
     """渲染持续可见的实验上下文栏，区分设置、数据和解释状态。"""
 
-    quality = "未导入实测数据"
-    if st.session_state.get("measurement_data") is not None:
-        report = quality_report(st.session_state.measurement_data)
-        quality = "阻断：格式问题" if report["blocked"] else ("警告：需检查" if report["warnings"] else "通过：最低条件")
-    calibration = "未校准" if not st.session_state.get("coarse_calibration") else "透明初值探索"
-    data_kind = "模拟结果" if st.session_state.get("measurement_data") is None else "模拟 + 实测 CSV"
+    mode = st.session_state.app_mode
+    if mode == "单细胞实验室":
+        cell_line = "细胞系未特异校准（相对状态模型）"
+        time_h = st.session_state.single_cell_state.time_h
+        data_kind = "代表性单细胞模拟轨迹"
+        calibration = "不适用：相对状态规则未校准"
+        quality = "不适用：当前未对齐单细胞实测数据"
+    elif mode == "微型细胞群":
+        cell_line = "细胞系未特异校准（代表性子群）"
+        time_h = st.session_state.microcolony.time_h
+        data_kind = "代表性微型细胞群模拟轨迹"
+        calibration = "不适用：异质性/通信为教学规则"
+        quality = "不适用：当前未对齐微群体实测数据"
+    else:
+        cell_line = cell.profile.display_name
+        time_h = cell.time_h
+        quality = "未导入实测数据"
+        if st.session_state.get("measurement_data") is not None:
+            report = st.session_state.get("measurement_quality_report")
+            if report is None:
+                report = quality_report(st.session_state.measurement_data)
+            quality = "阻断：格式问题" if report["blocked"] else ("警告：需检查" if report["warnings"] else "通过：最低条件")
+            imported_profile = st.session_state.get("measurement_data_profile_key")
+            if imported_profile and imported_profile != cell.profile_key:
+                imported_entry = CELL_PROFILES.get(imported_profile)
+                imported_label = imported_entry.display_name if imported_entry else str(imported_profile)
+                quality = f"警告：CSV按 {imported_label} 预设导入，与当前 {cell.profile.display_name} 不同"
+        calibration = "未校准" if not st.session_state.get("coarse_calibration") else "透明初值探索"
+        data_kind = "模拟结果" if st.session_state.get("measurement_data") is None else "模拟 + 实测 CSV"
     st.markdown(
         f'''<div class="ec-context" role="status"><strong>E-CELL</strong>
-        <span>模式：{html.escape(st.session_state.app_mode)}</span>
-        <span>细胞系：{html.escape(cell.profile.display_name)}</span>
-        <span>模型：v{MODEL_VERSION}</span><span>t = {cell.time_h:.1f} h</span>
+        <span>模式：{html.escape(mode)}</span>
+        <span>细胞系：{html.escape(cell_line)}</span>
+        <span>模型：v{MODEL_VERSION}</span><span>t = {time_h:.1f} h</span>
         <span>数据：{html.escape(data_kind)}</span><span>校准：{html.escape(calibration)}</span>
         <span>质量：{html.escape(quality)}</span></div>''', unsafe_allow_html=True,
     )
+
+
+def eligible_measurements_for_comparison(cell) -> pd.DataFrame | None:
+    """只允许最低质量检查通过且培养预设匹配的数据进入绘图/残差比较。"""
+
+    measurements = st.session_state.get("measurement_data")
+    if measurements is None:
+        return None
+    imported_profile = st.session_state.get("measurement_data_profile_key")
+    if imported_profile and imported_profile != cell.profile_key:
+        return None
+    if quality_report(measurements)["blocked"]:
+        return None
+    return measurements
+
+
+@st.fragment(run_every=1.0)
+def render_live_experiment_context_bar(cell) -> None:
+    """培养连续运行时独立刷新顶部时钟，不触发整页重绘。"""
+
+    advance_realtime()
+    render_experiment_context_bar(cell)
 
 
 def render_experiment_controls(cell) -> None:
@@ -898,7 +1011,6 @@ def render_experiment_controls(cell) -> None:
 def render_primary_results(cell, measurements: pd.DataFrame | None) -> None:
     """中栏：主时间序列、紧凑结果表与明确的模型解释边界。"""
 
-    advance_realtime()
     history = pd.DataFrame(st.session_state.history)
     st.markdown("#### 模拟结果与时间序列")
     selected = st.multiselect("主图指标", ["活细胞数", "葡萄糖", "乳酸"], default=["活细胞数", "葡萄糖", "乳酸"], key="primary_plot_fields")
@@ -911,7 +1023,15 @@ def render_primary_results(cell, measurements: pd.DataFrame | None) -> None:
         field, unit, color, english = mapping[label]
         axis.plot(history["time_h"], history[field], color=color, linewidth=2, linestyle="-", marker="o", markersize=3, label=f"Simulated {english}")
         if measurements is not None and field in measurements:
-            axis.scatter(measurements["time_h"], measurements[field], color="#202a33", marker="x", s=36, linewidths=1.5, label=f"Observed {english}")
+            calibration = st.session_state.get("coarse_calibration")
+            if calibration and calibration.training_time_h:
+                training = measurements[measurements["time_h"].isin(calibration.training_time_h)]
+                holdout = measurements[measurements["time_h"].isin(calibration.holdout_time_h or [])]
+                axis.scatter(training["time_h"], training[field], color="#334e68", marker="x", s=40, linewidths=1.5, label=f"Training {english}")
+                if not holdout.empty:
+                    axis.scatter(holdout["time_h"], holdout[field], facecolors="none", edgecolors="#b05a3c", marker="s", s=46, linewidths=1.5, label=f"Holdout {english}")
+            else:
+                axis.scatter(measurements["time_h"], measurements[field], color="#202a33", marker="x", s=36, linewidths=1.5, label=f"Observed {english}")
         axis.set_ylabel(unit)
         axis.grid(alpha=.22, linestyle=":")
         axis.legend(loc="best", fontsize=8)
@@ -925,7 +1045,14 @@ def render_primary_results(cell, measurements: pd.DataFrame | None) -> None:
     for label, (field, unit, _, _) in mapping.items():
         rows.append({"指标": label, "当前值": f"{current[field]:,.3f}", "相对上一时点变化": f"{current[field] - previous[field]:+.3f}", "单位": unit, "数据状态": "模拟" if measurements is None else "模拟 + 实测对齐"})
     st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-    st.caption(f"解读与限制：实线/圆点为经验模型模拟，黑色 × 为上传实测点；当前模型 v{MODEL_VERSION}，不构成独立实验验证或临床结论。")
+    st.caption(f"解读与限制：实线/圆点为经验模型模拟；× 为上传观测或训练点，空心方块为时间留出点（若已粗校准）。当前模型 v{MODEL_VERSION}，同序列留出不构成独立实验验证或临床结论。")
+
+
+@st.fragment(run_every=1.0)
+def render_live_primary_results(cell, measurements: pd.DataFrame | None) -> None:
+    """培养连续运行时刷新结果图与指标表，不承担时钟推进。"""
+
+    render_primary_results(cell, measurements)
 
 
 def render_scientific_status_panel(cell) -> None:
@@ -955,9 +1082,19 @@ def render_scientific_status_panel(cell) -> None:
             st.info("尚未导入实测 CSV；当前结果仅为模拟。")
         else:
             report = quality_report(measurements)
+            imported_profile = st.session_state.get("measurement_data_profile_key")
+            if imported_profile and imported_profile != cell.profile_key:
+                imported_entry = CELL_PROFILES.get(imported_profile)
+                imported_label = imported_entry.display_name if imported_entry else str(imported_profile)
+                st.warning(
+                    f"该 CSV 在“{imported_label}”培养预设下导入；当前为“{cell.profile.display_name}”。"
+                    "以下质量结果仅代表格式检查，该数据不会用于当前预设的对齐或校准。"
+                )
             for issue, suggestion in report["blocked"] + report["warnings"]:
                 st.warning(f"{issue}：{suggestion}")
-            if not report["blocked"] and not report["warnings"]:
+            if not report["blocked"] and not report["warnings"] and not (
+                imported_profile and imported_profile != cell.profile_key
+            ):
                 st.success("CSV 满足最低格式与建模条件。")
         result = st.session_state.get("coarse_calibration")
         if result:
@@ -1031,7 +1168,7 @@ def experiment_quality_panel() -> None:
 def controls(cell) -> None:
     """提供可对应真实培养操作的控制项。"""
 
-    intracellular_mode = st.session_state.get("app_mode") == "细胞生命活动"
+    intracellular_mode = st.session_state.get("app_mode") in {"单细胞实验室", "微型细胞群"}
     st.subheader("共享模拟时钟与环境操作" if intracellular_mode else "培养操作")
     speed_col, start_col, pause_col = st.columns([2, 1, 1])
     speed_col.selectbox(
@@ -1389,6 +1526,18 @@ def plot_history(history, measurements: pd.DataFrame | None = None) -> None:
     plt.close(fig)
 
 
+def _clear_measurement_state() -> None:
+    """删除当前会话中的实测数据及依赖该数据产生的粗校准结果。"""
+
+    for key in (
+        "measurement_data", "measurement_data_fingerprint", "measurement_data_profile_key",
+        "measurement_quality_report", "coarse_calibration",
+        "measurement_import_error", "measurement_invalid_fingerprint",
+        "measurement_replaced_notice",
+    ):
+        st.session_state.pop(key, None)
+
+
 def measurement_data_panel(cell, history) -> pd.DataFrame | None:
     """导入不持久化的实测 CSV，并输出叠加和残差需要的数据。"""
 
@@ -1399,16 +1548,78 @@ def measurement_data_panel(cell, history) -> pd.DataFrame | None:
         )
         uploaded = st.file_uploader("选择实测 CSV", type=["csv"], key="measurement_csv")
         if uploaded is None:
+            existing = st.session_state.get("measurement_data")
+            if existing is None:
+                return None
+            report = st.session_state.get("measurement_quality_report") or quality_report(existing)
+            quality_status = "阻断：格式问题" if report["blocked"] else (
+                "警告：需检查" if report["warnings"] else "通过：最低条件"
+            )
+            imported_profile = st.session_state.get("measurement_data_profile_key")
+            profile_mismatch = bool(imported_profile and imported_profile != cell.profile_key)
+            imported_entry = CELL_PROFILES.get(imported_profile) if imported_profile else None
+            imported_label = imported_entry.display_name if imported_entry else str(imported_profile)
+            st.info(
+                f"当前会话保留 {len(existing)} 个时间点的已标准化 CSV；"
+                f"质量状态：{quality_status}。切换模式不会删除它，选择新 CSV 可替换数据集。"
+            )
+            if profile_mismatch:
+                st.warning(
+                    f"该 CSV 导入时绑定到“{imported_label}”培养预设；当前预设为“{cell.profile.display_name}”。"
+                    "数据仍可查看和下载，但不会用于当前模拟对齐或校准。"
+                    "如需用于当前预设，请清除后重新导入，并确认数据来源。"
+                )
+            st.download_button(
+                "下载当前标准化数据副本",
+                existing.to_csv(index=False).encode("utf-8-sig"),
+                f"{cell.profile_key}_standardized_measurements.csv", "text/csv",
+                key="download_retained_measurements",
+            )
+            with st.expander("查看当前数据质量摘要", expanded=False):
+                for level, label in (("blocked", "阻止继续"), ("warnings", "可继续但需警告"), ("passed", "通过")):
+                    for issue, suggestion in report[level]:
+                        st.markdown(f"**{label}：** {issue} — {suggestion}")
+                st.caption(report["disclaimer"])
+            if st.button("移除当前实测数据及其校准结果", key="clear_measurement_data"):
+                _clear_measurement_state()
+                st.rerun()
+            return None if profile_mismatch or report["blocked"] else existing
+        contents = uploaded.getvalue()
+        fingerprint = measurement_fingerprint(contents)
+        if (
+            st.session_state.get("measurement_invalid_fingerprint") == fingerprint
+            and st.session_state.get("measurement_import_error")
+        ):
+            st.error(f"无法读取实测数据：{st.session_state.measurement_import_error}")
             return None
+        st.session_state.pop("measurement_import_error", None)
+        st.session_state.pop("measurement_invalid_fingerprint", None)
+        if st.session_state.pop("measurement_replaced_notice", False):
+            st.info("CSV 内容已更换，旧数据集的粗校准结果已清除；当前数据需重新评估。")
+        previous_fingerprint = st.session_state.get("measurement_data_fingerprint")
+        data_changed = previous_fingerprint != fingerprint
+        if previous_fingerprint is not None and data_changed and st.session_state.get("coarse_calibration") is not None:
+            st.session_state.pop("coarse_calibration", None)
         try:
-            measurements, notes = standardize_measurements(uploaded.getvalue())
+            measurements, notes = standardize_measurements(contents)
         except (ValueError, pd.errors.ParserError) as error:
-            st.error(f"无法读取实测数据：{error}")
-            return None
+            _clear_measurement_state()
+            st.session_state.measurement_invalid_fingerprint = fingerprint
+            st.session_state.measurement_import_error = str(error)
+            st.rerun()
         st.session_state.measurement_data = measurements
+        st.session_state.measurement_data_fingerprint = fingerprint
+        if data_changed or not st.session_state.get("measurement_data_profile_key"):
+            st.session_state.measurement_data_profile_key = cell.profile_key
         for note in notes:
             st.caption(note)
-        report = quality_report(measurements)
+        report = st.session_state.get("measurement_quality_report")
+        if report is None or data_changed:
+            report = quality_report(measurements)
+        st.session_state.measurement_quality_report = report
+        if data_changed:
+            st.session_state.measurement_replaced_notice = previous_fingerprint is not None
+            st.rerun()
         if report["blocked"]:
             st.error("数据质量检查：阻止继续用于模型对齐/校准。请先修正下列问题。")
         elif report["warnings"]:
@@ -1434,6 +1645,15 @@ def measurement_data_panel(cell, history) -> pd.DataFrame | None:
             st.caption("这是供模型比较的标准化副本；不会修改或覆盖你上传的原始 CSV。")
         if report["blocked"]:
             return None
+        imported_profile = st.session_state.get("measurement_data_profile_key")
+        if imported_profile and imported_profile != cell.profile_key:
+            imported_entry = CELL_PROFILES.get(imported_profile)
+            imported_label = imported_entry.display_name if imported_entry else str(imported_profile)
+            st.warning(
+                f"该 CSV 导入时绑定到“{imported_label}”培养预设，与当前“{cell.profile.display_name}”不同；"
+                "本次不生成模拟对齐或校准结果。清除后重新导入可显式绑定到当前预设。"
+            )
+            return None
         if not list(observed_fields(measurements)):
             st.warning("没有可与模型比较的指标，请检查 CSV 列名。")
             return None
@@ -1458,6 +1678,7 @@ def measurement_data_panel(cell, history) -> pd.DataFrame | None:
             "在 growth_scale=0.1–2.0、uptake_scale=0.1–3.0 的网格中搜索，"
             "以活细胞数、葡萄糖、乳酸的相对残差最小为目标。要求上传实验的起点"
             "与当前模拟历史首点代表同一培养条件；不拟合死亡、氧传递、药物或 pH 参数。"
+            "若模拟途中发生换液、补料、加药或环境调整，当前重演无法复现这些干预，会阻止校准。"
         )
         st.caption("指标权重表达你希望各观测指标在透明误差目标中的相对重要性；它们不是统计置信度。")
         weight_columns = st.columns(3)
@@ -1469,7 +1690,10 @@ def measurement_data_panel(cell, history) -> pd.DataFrame | None:
         if st.button("计算两参数粗校准", key="run_coarse_calibration"):
             try:
                 with st.spinner("正在搜索透明的两参数网格…"):
-                    st.session_state.coarse_calibration = fit_growth_and_uptake(cell, history, measurements, calibration_weights)
+                    st.session_state.coarse_calibration = fit_with_temporal_holdout(
+                        cell, history, measurements, calibration_weights,
+                        events=st.session_state.get("events", []),
+                    )
             except ValueError as error:
                 st.error(f"无法完成粗校准：{error}")
         result = st.session_state.get("coarse_calibration")
@@ -1479,6 +1703,18 @@ def measurement_data_panel(cell, history) -> pd.DataFrame | None:
                 f"代谢摄取缩放 = {result.uptake_scale:.1f}；"
                 f"归一化 RMSE = {result.normalized_rmse:.4f}。"
             )
+            st.caption("归一化 RMSE 仅针对训练时间点；留出点未参与参数搜索，仍不是独立实验验证。")
+            st.markdown("**训练 / 时间留出误差（MAE、RMSE 使用各指标原单位）**")
+            st.caption("仅活细胞数、葡萄糖、乳酸中具备至少两个训练观测且权重大于 0 的指标参与参数搜索；其他可见误差只是诊断。")
+            if result.training_metrics:
+                st.dataframe(pd.DataFrame(result.training_metrics), hide_index=True, width="stretch")
+            if result.holdout_metrics:
+                st.caption(f"留出时间点：{', '.join(f'{value:g} h' for value in result.holdout_time_h or [])}")
+                st.dataframe(pd.DataFrame(result.holdout_metrics), hide_index=True, width="stretch")
+            elif result.holdout_time_h:
+                st.warning("已保留时间点，但没有可比较的留出指标；请检查观测缺失或模拟是否提前停止。")
+            else:
+                st.warning("时间点不足 5 个；当前全部用于拟合，没有留出误差。")
             grid = pd.DataFrame(result.grid_scores or [])
             if not grid.empty:
                 surface = grid.pivot(index="uptake_scale", columns="growth_scale", values="normalized_rmse")
@@ -1503,13 +1739,30 @@ def measurement_data_panel(cell, history) -> pd.DataFrame | None:
                     warnings.append("接近最佳区域较宽；参数可辨识性有限。")
                 for warning in warnings:
                     st.warning(warning)
+                fitted_weights = {
+                    field: float((result.weights or {}).get(field, 1.0))
+                    for field in calibration_weights
+                }
                 calibration_report = {
                     "model_version": MODEL_VERSION, "data_points": int(len(measurements)),
-                    "fitted_columns": [field for field in calibration_weights if field in measurements],
-                    "weights": calibration_weights, "search_range": {"growth_scale": [0.1, 2.0], "uptake_scale": [0.1, 3.0]},
+                    "data_fingerprint_sha256": st.session_state.get("measurement_data_fingerprint"),
+                    "imported_profile_context": st.session_state.get("measurement_data_profile_key"),
+                    "fitted_columns": [
+                        field for field, weight in fitted_weights.items()
+                        if field in measurements and weight > 0
+                        and measurements.loc[
+                            measurements["time_h"].isin(result.training_time_h or []), field
+                        ].notna().sum() >= 2
+                    ],
+                    "weights": fitted_weights, "search_range": {"growth_scale": [0.1, 2.0], "uptake_scale": [0.1, 3.0]},
                     "best": {"growth_scale": result.growth_scale, "uptake_scale": result.uptake_scale, "normalized_rmse": result.normalized_rmse},
+                    "training_time_h": result.training_time_h, "holdout_time_h": result.holdout_time_h,
+                    "training_metrics": result.training_metrics, "holdout_metrics": result.holdout_metrics,
                     "warning": warnings or ["这是训练数据拟合误差，尚未构成独立验证。"],
                 }
+                st.caption(
+                    "报告包含 CSV 内容 SHA-256 指纹（用于核对文件是否相同，不证明数据来源或实验真实性）。"
+                )
                 st.download_button("下载粗校准报告 JSON", json.dumps(calibration_report, ensure_ascii=False, indent=2).encode("utf-8"), f"{cell.profile_key}_coarse_calibration_{MODEL_VERSION}.json", "application/json", key="download_calibration_report")
             if st.button("应用建议到后续模拟", key="apply_coarse_calibration"):
                 cell.parameters.growth_scale = result.growth_scale
@@ -1533,20 +1786,36 @@ def render_analysis_workspace(cell) -> None:
             st.markdown("**模拟—实测残差摘要**")
             st.dataframe(residual_summary(comparison).style.format({"MAE": "{:.4g}", "RMSE": "{:.4g}"}), hide_index=True, width="stretch")
     with tabs[1]:
-        st.caption("透明网格搜索仅探索 growth_scale 与 uptake_scale 的参数初值；不是黑箱优化、统计推断或置信区间。")
+        st.caption("透明网格搜索仅探索 growth_scale 与 uptake_scale 的参数初值；不重放中途培养干预，也不是黑箱优化、统计推断或置信区间。")
         measurements = st.session_state.get("measurement_data")
-        if measurements is not None and quality_report(measurements)["is_minimum_model_ready"]:
+        imported_profile = st.session_state.get("measurement_data_profile_key")
+        profile_matches = not imported_profile or imported_profile == cell.profile_key
+        if measurements is not None and quality_report(measurements)["is_minimum_model_ready"] and profile_matches:
             if st.button("运行透明两参数粗校准", key="run_workbench_calibration"):
-                with st.spinner("正在搜索透明网格…"):
-                    st.session_state.coarse_calibration = fit_growth_and_uptake(cell, st.session_state.history, measurements)
-                st.rerun()
+                try:
+                    with st.spinner("正在搜索透明网格…"):
+                        st.session_state.coarse_calibration = fit_with_temporal_holdout(
+                            cell, st.session_state.history, measurements,
+                            events=st.session_state.get("events", []),
+                        )
+                    st.rerun()
+                except ValueError as error:
+                    st.error(f"无法完成粗校准：{error}")
+        elif measurements is not None and not profile_matches:
+            st.warning("实测 CSV 的导入预设与当前培养预设不同；可查看数据，但不能用于当前粗校准。")
         else:
             st.info("请先在“实测 CSV 对齐”标签中导入满足最低建模条件的实测数据。")
         result = st.session_state.get("coarse_calibration")
         if result is None:
             st.info("尚无粗校准结果。此模块不使用黑箱优化器，也不提供置信区间。")
         else:
-            st.success(f"当前候选：growth_scale={result.growth_scale:.1f}；uptake_scale={result.uptake_scale:.1f}。请结合训练/留出误差与边界警告解释。")
+            st.success(f"当前候选：growth_scale={result.growth_scale:.1f}；uptake_scale={result.uptake_scale:.1f}。请结合训练误差、留出点状态与边界警告解释。")
+            if result.holdout_metrics:
+                st.dataframe(pd.DataFrame(result.holdout_metrics), hide_index=True, width="stretch")
+            elif result.holdout_time_h:
+                st.warning("留出点没有可比较的指标；当前不能评估留出误差。")
+            else:
+                st.caption("没有留出点评估；当前误差仅是训练点拟合误差。")
             grid = pd.DataFrame(result.grid_scores or [])
             if not grid.empty:
                 st.dataframe(grid.nsmallest(10, "normalized_rmse"), hide_index=True, width="stretch")
@@ -1563,16 +1832,16 @@ def render_analysis_workspace(cell) -> None:
 
 
 def scenario_panel(cell) -> None:
-    """导入或导出最小可复跑的模拟场景；不接收原始实测 CSV。"""
+    """导入或导出培养续跑起点与配置；不接收原始实测 CSV。"""
 
     with st.expander("实验场景：导入、导出与复现", expanded=False):
-        st.caption("场景只保存模拟假设、参数和事件配置；不保存上传 CSV、个人信息或实验原始记录。")
+        st.caption("场景保存导出时的培养状态、模拟时钟、参数和计划操作，可从该时点继续模拟；不保存此前完整轨迹、上传 CSV 或实验原始记录。")
         payload = export_scenario(
             cell,
             duration_h=float(st.session_state.get("scenario_duration_h", 72)),
             dt_h=float(st.session_state.get("scenario_dt_h", 1)),
             events=st.session_state.get("scheduled_actions", []),
-            calibration_status="已应用粗校准" if st.session_state.get("coarse_calibration") else "未校准",
+            calibration_status="已计算透明粗校准候选；是否应用请查操作事件" if st.session_state.get("coarse_calibration") else "当前无粗校准候选",
         )
         st.download_button(
             "导出当前场景 JSON", data=json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
@@ -1584,10 +1853,16 @@ def scenario_panel(cell) -> None:
                 restored, imported = import_scenario(uploaded.getvalue())
                 st.session_state.cell = restored
                 st.session_state.history = [restored.snapshot()]
+                # 场景导入会替换初始状态/参数；旧场景的粗校准不可沿用。
+                st.session_state.pop("coarse_calibration", None)
+                # 表单控件缓存了旧实验值；若不清理，重绘会把旧环境重新写回导入场景。
+                for key in ENVIRONMENT_WIDGET_KEYS:
+                    st.session_state.pop(key, None)
+                st.session_state.profile_key = restored.profile_key
                 st.session_state.scheduled_actions = imported.get("events", [])
                 st.session_state.events = []
                 st.session_state.preset_name = "导入场景"
-                st.session_state.pending_toast = ("场景已载入；从导入初始状态重新运行。", ":material/info:")
+                st.session_state.pending_toast = ("场景已载入；从记录的时点继续模拟。", ":material/info:")
                 save_runtime_state()
                 st.rerun()
             except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -2002,7 +2277,7 @@ def organelle_explorer(cell, state: IntracellularState) -> None:
 def pixel_lab_scene(cell) -> None:
     """渲染两个模式共享的像素实验室工作台与 HUD。"""
 
-    intracellular_mode = st.session_state.get("app_mode") == "细胞生命活动"
+    intracellular_mode = st.session_state.get("app_mode") in {"单细胞实验室", "微型细胞群"}
     room_name = "细胞生命活动室" if intracellular_mode else "细胞培养室"
     room_icon = ""
     live_value = (
@@ -2711,6 +2986,288 @@ def cell_communication_panel(cell, state: IntracellularState) -> None:
         st.caption(f"当前：稳态/适应 {communication.resilient_fraction:.1f}% · 应激 {communication.stressed_fraction:.1f}% · 受损 {communication.injured_fraction:.1f}%")
 
 
+def _single_cell_environment_controls(environment: MicroenvironmentState) -> None:
+    """单细胞实验室的直接环境输入；不改写群体培养模型。"""
+
+    st.markdown("#### 局部微环境配置")
+    st.caption("输入是培养条件或局部可用性代理，不是细胞内测量值。")
+    environment.local_oxygen_availability = st.slider("局部氧可用性代理（0–1）", 0.0, 1.0, float(environment.local_oxygen_availability), 0.05, key="sc_oxygen")
+    environment.glucose_mm = st.number_input("葡萄糖（mM）", 0.0, 50.0, float(environment.glucose_mm), 0.1, key="sc_glucose")
+    environment.lactate_mm = st.number_input("乳酸（mM）", 0.0, 100.0, float(environment.lactate_mm), 0.1, key="sc_lactate")
+    st.caption("乳酸会记录到环境轨迹，但当前单细胞状态方程不直接使用；如需表达酸碱影响，请单独设置 pH。")
+    environment.ph = st.number_input("pH", 6.0, 8.5, float(environment.ph), 0.05, key="sc_ph")
+    environment.temperature_c = st.number_input("温度（°C）", 0.0, 50.0, float(environment.temperature_c), 0.1, key="sc_temperature")
+    environment.drug_um = st.number_input("药物（µM）", 0.0, 1000.0, float(environment.drug_um), 0.1, key="sc_drug")
+    environment.local_confluence_percent = st.slider("局部拥挤程度（%）", 0.0, 100.0, float(environment.local_confluence_percent), 1.0, key="sc_confluence")
+    environment.normalized()
+
+
+def _single_cell_step(hours: float) -> None:
+    state = st.session_state.single_cell_state
+    environment = st.session_state.single_cell_environment
+    state.step(environment, hours)
+    environment.time_h = state.time_h
+    st.session_state.single_cell_history.append(single_cell_history_row(state, environment))
+    st.session_state.single_cell_history = st.session_state.single_cell_history[-MAX_HISTORY_POINTS:]
+    st.session_state.single_cell_events.append({"time_h": state.time_h, "event": f"推进 {hours:g} h"})
+
+
+def _single_cell_plot(history: list[dict]) -> None:
+    labels = {
+        "ATP_percent": "ATP 相对指数", "mitochondrial_potential_percent": "线粒体功能相对指数",
+        "glycolysis_percent": "糖酵解相对指数", "ROS_percent": "ROS 相对指数",
+        "DNA_damage_percent": "DNA 损伤相对指数", "ER_stress_percent": "ER 应激相对指数",
+        "autophagy_percent": "自噬适应/回收相对指数", "apoptosis_signal_percent": "促凋亡压力相对指数",
+    }
+    chosen = st.multiselect("叠加观察指标（2–4 项）", list(labels), default=["ATP_percent", "ROS_percent", "ER_stress_percent"], format_func=labels.get, max_selections=4, key="single_cell_series")
+    if not chosen:
+        st.caption("请选择至少一个指标。")
+        return
+    frame = pd.DataFrame(history)
+    if not frame.empty and float(frame["time_h"].iloc[0]) > 1e-9:
+        st.warning(
+            f"当前轨迹窗口从 {float(frame['time_h'].iloc[0]):.1f} h 开始；不包含更早记录，"
+            "请勿将这段轨迹解释为完整实验时间线。"
+        )
+    fig, ax = plt.subplots(figsize=(9.4, 3.8))
+    for key in chosen:
+        ax.plot(frame["time_h"], frame[key], label=labels[key], linewidth=1.8)
+    ax.set_xlabel("时间（h）")
+    ax.set_ylabel("相对指数（0–100）")
+    ax.set_ylim(0, 100)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.22), ncol=2, frameon=False, fontsize=8)
+    ax.grid(alpha=0.22)
+    fig.tight_layout()
+    st.pyplot(fig, width="stretch")
+    plt.close(fig)
+    st.caption(f"解读与限制：模型 v{MODEL_VERSION}；指标为代表性细胞相对功能指数，权重/阈值/时间常数为 B/C 级待校准或教学规则。")
+
+
+def single_cell_lab() -> None:
+    """默认单细胞状态工作台，完全独立于群体培养对象推进。"""
+
+    state = st.session_state.single_cell_state
+    environment = st.session_state.single_cell_environment
+    if st.session_state.pop("sc_reset_pending", False):
+        for widget_key in ("sc_oxygen", "sc_glucose", "sc_lactate", "sc_ph", "sc_temperature", "sc_drug", "sc_confluence"):
+            st.session_state.pop(widget_key, None)
+    if st.session_state.pop("sc_import_pending", False):
+        for widget_key in ("sc_oxygen", "sc_glucose", "sc_lactate", "sc_ph", "sc_temperature", "sc_drug", "sc_confluence"):
+            st.session_state.pop(widget_key, None)
+    if st.session_state.pop("sc_culture_sync_pending", False):
+        for widget_key in ("sc_oxygen", "sc_glucose", "sc_lactate", "sc_ph", "sc_temperature", "sc_drug", "sc_confluence"):
+            st.session_state.pop(widget_key, None)
+    st.subheader("单细胞实验室")
+    st.info("代表性单细胞的相对状态工作台：不输出 ATP 浓度、膜电位 mV、细胞器定量测量、真实命运概率或临床预测。")
+    config_col, result_col = st.columns([0.85, 1.65], gap="medium")
+    with config_col:
+        environment_before = environment.snapshot()
+        _single_cell_environment_controls(environment)
+        changed_environment = environment_change_event(
+            environment_before, environment, state.time_h,
+        )
+        if changed_environment:
+            st.session_state.single_cell_events.append(changed_environment)
+        if st.button("从培养工作流载入当前环境", key="sc_load_culture_environment", help="复制当前群体培养模拟的环境字段到单细胞输入；不会更改培养模拟。"):
+            old_environment = st.session_state.single_cell_environment
+            loaded_environment = MicroenvironmentState.from_culture(st.session_state.cell)
+            loaded_environment.time_h = st.session_state.single_cell_state.time_h
+            load_event = environment_change_event(
+                old_environment.snapshot(), loaded_environment,
+                st.session_state.single_cell_state.time_h,
+            ) or {
+                "time_h": st.session_state.single_cell_state.time_h,
+                "event": "从培养工作流载入环境（输入值无变化）",
+                "event_type": "environment_load",
+            }
+            load_event["source"] = "culture_workflow"
+            st.session_state.single_cell_environment = loaded_environment
+            st.session_state.single_cell_events.append(load_event)
+            st.session_state.sc_culture_sync_pending = True
+            st.rerun()
+        controls = st.columns(3)
+        if controls[0].button("单步 1 h", width="stretch", key="sc_step"):
+            _single_cell_step(1.0)
+            st.rerun()
+        if controls[1].button("推进 6 h", width="stretch", key="sc_advance"):
+            _single_cell_step(6.0)
+            st.rerun()
+        if controls[2].button("重置", width="stretch", key="sc_reset"):
+            st.session_state.single_cell_state = IntracellularState()
+            st.session_state.single_cell_environment = MicroenvironmentState.from_culture(st.session_state.cell)
+            st.session_state.single_cell_environment.time_h = 0.0
+            st.session_state.single_cell_history = [single_cell_history_row(
+                st.session_state.single_cell_state, st.session_state.single_cell_environment,
+            )]
+            st.session_state.single_cell_events = []
+            st.session_state.sc_reset_pending = True
+            st.rerun()
+        if st.button("施加教学性氧化压力", width="stretch", key="sc_oxidative"):
+            state.apply_oxidative_stress(20.0)
+            st.session_state.single_cell_history.append(single_cell_history_row(state, environment))
+            st.session_state.single_cell_events.append({
+                "time_h": state.time_h,
+                "event": "教学性氧化压力脉冲",
+                "event_type": "oxidative_stress",
+                "input_index": 20.0,
+                "environment": environment.snapshot(),
+            })
+            st.rerun()
+    with result_col:
+        status, level = intracellular_status(state)
+        getattr(st, level)(f"状态：{status}；周期：{state.cycle_phase}；t = {state.time_h:.1f} h")
+        intracellular_metrics(state)
+        st.markdown("#### 相邻记录变化")
+        change_rows = intracellular_change_summary(st.session_state.single_cell_history)
+        if change_rows:
+            st.dataframe(pd.DataFrame(change_rows), hide_index=True, width="stretch")
+            st.caption("变化率为相邻模型记录之间的描述性差值，不是实验测得速率；同一模拟时点的干预只显示差值，不计算每小时速率。")
+        _single_cell_plot(st.session_state.single_cell_history)
+        with st.expander("机制解释与边界", expanded=True):
+            st.markdown(f"**主要上游驱动：** 氧可用性代理 {environment.local_oxygen_availability:.2f}、葡萄糖 {environment.glucose_mm:.2f} mM、pH {environment.ph:.2f}、药物 {environment.drug_um:.2f} µM 与局部拥挤程度 {environment.local_confluence_percent:.0f}%。\n\n**显著下游影响：** ATP {state.atp_percent:.1f}、ROS {state.ros_percent:.1f}、ER 应激 {state.er_stress_percent:.1f}、促凋亡压力 {state.apoptosis_signal_percent:.1f}（均为相对指数）。\n\n**证据：** 环境—能量/应激方向为 B 级待校准先验；线性权重、阈值和氧化压力按钮为 C 级教学规则。\n\n**不能解读：** 不等同于单细胞组学、活细胞成像、受体测量或实际死亡比例。")
+        with st.expander("单细胞事件记录", expanded=False):
+            recent_events = st.session_state.single_cell_events[-10:]
+            if recent_events:
+                st.dataframe(pd.DataFrame(recent_events), hide_index=True, width="stretch")
+                st.caption("此处显示最近 10 条；完整事件随单细胞场景 JSON 导出。输入变更记录前后值，教学干预记录其相对输入指数。")
+            else:
+                st.caption("尚无环境变更或教学干预记录。")
+        single_cell_export_rows = add_traceability_fields(
+            st.session_state.single_cell_history,
+            evidence_level="环境输入 B 级；相对状态关系 B/C 级待校准或教学规则",
+        )
+        single_cell_csv_name = f"single_cell_{MODEL_VERSION}_{state.time_h:.1f}h_timeline.csv"
+        st.download_button("导出单细胞时间线 CSV", pd.DataFrame(single_cell_export_rows).to_csv(index=False).encode("utf-8-sig"), single_cell_csv_name, "text/csv")
+        payload = export_single_cell_scenario(environment, state, st.session_state.single_cell_history, st.session_state.single_cell_events)
+        st.download_button("导出单细胞场景 JSON", json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"), "single_cell_scenario.json", "application/json")
+        uploaded = st.file_uploader("导入单细胞场景 JSON", type=["json"], key="sc_scenario_upload")
+        if uploaded and st.button("校验并载入单细胞场景", key="sc_scenario_import"):
+            try:
+                file_bytes = uploaded.getvalue()
+                env, restored_state, history, events = import_single_cell_scenario(file_bytes)
+                st.session_state.single_cell_environment = env
+                st.session_state.single_cell_state = restored_state
+                st.session_state.single_cell_history = history
+                st.session_state.single_cell_events = events
+                st.session_state.sc_import_pending = True
+                st.success("单细胞场景已通过格式检查并载入。")
+                st.rerun()
+            except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                st.error(f"无法载入该场景：{exc}")
+        save_runtime_state()
+
+
+def microcolony_lab() -> None:
+    """小型代表性群体工作台；保留异质性而不将平均值作为唯一视图。"""
+
+    colony = st.session_state.microcolony
+    environment = st.session_state.single_cell_environment
+    if st.session_state.pop("mc_import_pending", False):
+        st.session_state.pop("mc_count", None)
+        st.session_state.pop("mc_communication", None)
+    st.subheader("微型细胞群")
+    st.info("3–50 个代表性细胞的教学性微群体：位置仅表示邻近关系；通信、信号和命运均为相对机制规则，不是空间成像或细胞通信预测。")
+    setting_col, view_col = st.columns([0.8, 1.7], gap="medium")
+    with setting_col:
+        count = st.slider("代表性细胞数量", 3, 50, colony.cell_count, key="mc_count")
+        colony.communication_enabled = st.toggle("开启邻近通信反馈（C 级教学规则）", value=colony.communication_enabled, key="mc_communication")
+        if st.button("按当前数量重置微群体", width="stretch"):
+            colony.reset(count, environment)
+            st.session_state.microcolony_history = [colony.summary()]
+            st.rerun()
+        if st.button("推进微群体 1 h", width="stretch"):
+            colony.step(environment, 1.0)
+            st.session_state.microcolony_history.append(colony.summary())
+            st.rerun()
+        st.caption("共享基础微环境来自单细胞实验室；通信关闭时，邻居状态不会通过局部信号互相反馈。")
+    with view_col:
+        summary = colony.summary()
+        st.dataframe(pd.DataFrame([summary]), hide_index=True, width="stretch")
+        st.markdown("**代表性状态子群分布**")
+        st.dataframe(pd.DataFrame(colony.subgroup_summary()), hide_index=True, width="stretch")
+        st.caption("比例仅按当前 3–50 个代表性细胞标签计算，不代表实际培养群体的细胞比例。")
+        subgroup_history = pd.DataFrame(colony.subgroup_trajectory())
+        if not subgroup_history.empty:
+            st.markdown("**代表性子群标签随时间变化**")
+            fig_subgroups, ax_subgroups = plt.subplots(figsize=(8.8, 3.0))
+            subgroup_colors = {
+                "稳态": "#547f75", "代谢压力": "#b18845",
+                "氧化应激": "#ad7550", "促凋亡压力": "#a65b63",
+            }
+            for label, color in subgroup_colors.items():
+                points = subgroup_history[subgroup_history["状态子群"] == label]
+                ax_subgroups.plot(
+                    points["time_h"], points["占该时点记录比例（%）"],
+                    color=color, linewidth=1.7, marker="o", markersize=3, label=label,
+                )
+            ax_subgroups.set_xlabel("时间（h）")
+            ax_subgroups.set_ylabel("该时点代表性记录比例（%）")
+            ax_subgroups.set_ylim(0, 100)
+            ax_subgroups.grid(alpha=.2, linestyle=":")
+            ax_subgroups.legend(loc="upper center", bbox_to_anchor=(0.5, -0.24), ncol=2, frameon=False)
+            fig_subgroups.tight_layout()
+            st.pyplot(fig_subgroups, width="stretch")
+            plt.close(fig_subgroups)
+            if (subgroup_history.groupby("time_h")["该时点记录细胞数"].first() < colony.cell_count).any():
+                st.warning("历史窗口边界处的某些时点只保留了部分细胞记录；图中比例按该时点实际保留数计算。")
+        fig, ax = plt.subplots(figsize=(8.8, 4.0))
+        styles = {"稳态": ("o", "#5f8f87"), "代谢压力": ("s", "#bd8a43"), "氧化应激": ("^", "#a87548"), "促凋亡压力": ("X", "#a85a61")}
+        for item in colony.cells:
+            marker, color = styles[item.label()]
+            ax.scatter(item.x, item.y, s=80 + item.local_signal_index * 1.5, marker=marker, color=color, edgecolors="#31424b", linewidths=.6)
+            ax.text(item.x + .10, item.y + .10, str(item.cell_id), fontsize=7)
+        ax.set_title("代表性细胞邻近图（教学性排版）", loc="left")
+        ax.set_xlabel("二维排版坐标（非真实空间坐标）")
+        ax.set_ylabel("二维排版坐标（非真实空间坐标）")
+        ax.grid(alpha=.18)
+        st.pyplot(fig, width="stretch")
+        plt.close(fig)
+        selected = st.selectbox("选择代表性细胞", [item.cell_id for item in colony.cells], key="mc_selected")
+        selected_payload = colony.selected_snapshot(selected)
+        st.dataframe(pd.DataFrame([selected_payload]), hide_index=True, width="stretch")
+        selected_history = colony.selected_history(selected)
+        if selected_history:
+            history_frame = pd.DataFrame(selected_history)
+            if float(history_frame["time_h"].iloc[0]) > 1e-9:
+                st.warning(
+                    f"所选细胞轨迹从 {float(history_frame['time_h'].iloc[0]):.1f} h 开始；"
+                    "不包含更早记录。"
+                )
+            trace_fig, trace_ax = plt.subplots(figsize=(8.5, 3.2))
+            trace_ax.plot(history_frame["time_h"], history_frame["ATP_percent"], label="ATP 相对指数")
+            trace_ax.plot(history_frame["time_h"], history_frame["ROS_percent"], label="ROS 相对指数")
+            trace_ax.set_xlabel("时间（h）")
+            trace_ax.set_ylabel("相对指数（0–100）")
+            trace_ax.set_ylim(0, 100)
+            trace_ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.22), ncol=2, frameon=False)
+            trace_ax.grid(alpha=.2)
+            trace_fig.tight_layout()
+            st.pyplot(trace_fig, width="stretch")
+            plt.close(trace_fig)
+        st.caption("所选细胞：显示其相对状态、上游共享微环境与距离衰减的局部信号。信号强度和距离关系均为 C 级教学规则。")
+        selected_export_rows = add_traceability_fields(
+            selected_history,
+            evidence_level="细胞内相对状态 B/C 级待校准；异质性与通信 C 级教学规则",
+        )
+        colony_csv_name = f"microcolony_{MODEL_VERSION}_{colony.time_h:.1f}h_cell_{selected}_timeline.csv"
+        st.download_button("导出所选细胞轨迹 CSV", pd.DataFrame(selected_export_rows).to_csv(index=False).encode("utf-8-sig"), colony_csv_name, "text/csv")
+        st.download_button("导出微群体场景 JSON", json.dumps(export_microcolony_scenario(colony, environment), ensure_ascii=False, indent=2).encode("utf-8"), "microcolony_scenario.json", "application/json")
+        uploaded = st.file_uploader("导入微群体场景 JSON", type=["json"], key="mc_scenario_upload")
+        if uploaded and st.button("校验并载入微群体场景", key="mc_scenario_import"):
+            try:
+                file_bytes = uploaded.getvalue()
+                restored_colony, restored_environment = import_microcolony_scenario(file_bytes)
+                st.session_state.microcolony = restored_colony
+                st.session_state.single_cell_environment = restored_environment
+                st.session_state.microcolony_history = [restored_colony.summary()]
+                st.session_state.mc_import_pending = True
+                st.success("微群体场景已通过格式检查并载入。")
+                st.rerun()
+            except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                st.error(f"无法载入该场景：{exc}")
+        save_runtime_state()
+
+
 @st.fragment(run_every=1.0)
 def intracellular_live_panel() -> None:
     """随共享时钟刷新细胞器功能状态。"""
@@ -2756,49 +3313,41 @@ if st.session_state.get("reduce_motion"):
     st.markdown("<style>*,*::before,*::after{animation:none!important;transition:none!important;}</style>", unsafe_allow_html=True)
 
 st.title("e-cell")
-st.caption("贴壁细胞培养条件探索 · 文献驱动的经验动力学研究原型")
-render_experiment_context_bar(cell)
+st.caption("单细胞与微型细胞群生命状态探索 · 培养环境与数据工作流支撑的研究原型")
+if st.session_state.app_mode == "培养环境与数据工作流" and st.session_state.running:
+    render_live_experiment_context_bar(cell)
+else:
+    render_experiment_context_bar(cell)
 st.info("研究原型：支持假设探索和实验设计讨论；尚未完成独立验证，不能替代湿实验、定量检测或临床判断。")
 
 pending_toast = st.session_state.pop("pending_toast", None)
 if pending_toast:
-    message, icon = pending_toast
-    st.toast(message, icon=icon)
+    message, _icon = pending_toast
+    st.toast(message)
 
-if st.session_state.app_mode == "细胞培养":
+if st.session_state.app_mode == "培养环境与数据工作流":
+    comparison_measurements = eligible_measurements_for_comparison(cell)
     with st.container(key="workbench_layout"):
         left_column, main_column = st.columns([1.0, 2.3], gap="medium")
         with left_column:
             render_experiment_controls(cell)
         with main_column:
-            render_primary_results(cell, st.session_state.get("measurement_data"))
+            if st.session_state.running:
+                render_live_primary_results(cell, comparison_measurements)
+            else:
+                render_primary_results(cell, comparison_measurements)
             st.divider()
             render_scientific_status_panel(cell)
     render_analysis_workspace(cell)
     data = pd.DataFrame(st.session_state.history)
     export_name = f"{cell.profile_key}_culture_{MODEL_VERSION}_{cell.time_h:.1f}h.csv"
-else:
-    st.markdown(
-        '<div class="vc-mode-note"><strong>代表性单细胞视角</strong> · '
-        '培养环境会影响膜运输、能量代谢、细胞器应激、细胞周期和促凋亡压力；'
-        '两个模式使用同一个时钟。</div>',
-        unsafe_allow_html=True,
-    )
-    with st.container(key="workbench_layout"):
-        left_column, main_column = st.columns([1.0, 2.3], gap="medium")
-        with left_column:
-            render_experiment_controls(cell)
-        with main_column:
-            intracellular_live_panel()
-            observability_panel()
-            st.divider()
-            render_scientific_status_panel(cell)
-    st.subheader("细胞内部状态曲线")
-    plot_intracellular_history(st.session_state.intracellular_history)
-    data = pd.DataFrame(st.session_state.intracellular_history)
-    export_name = f"{cell.profile_key}_intracellular_{MODEL_VERSION}_{cell.time_h:.1f}h.csv"
-
-if st.session_state.app_mode == "细胞生命活动":
-    st.download_button("下载带单位的 CSV", data=data.to_csv(index=False).encode("utf-8-sig"), file_name=export_name, mime="text/csv")
-    with st.expander("查看原始数据"):
-        st.dataframe(data, hide_index=True, width="stretch")
+elif st.session_state.app_mode == "单细胞实验室":
+    single_cell_lab()
+    with st.expander("细胞器与教学性机制探索", expanded=True):
+        st.caption("次级可视化：所有细胞器状态是相对功能指数，仅用于教学与机制探索。")
+        intracellular_map(st.session_state.single_cell_state)
+        organelle_explorer(cell, st.session_state.single_cell_state)
+        intracellular_actions(st.session_state.single_cell_state)
+        observability_panel()
+elif st.session_state.app_mode == "微型细胞群":
+    microcolony_lab()

@@ -19,6 +19,25 @@ class ExperimentDataTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "时间列"):
             standardize_measurements("葡萄糖\n5.5\n".encode())
 
+    def test_invalid_source_time_is_not_silently_cleaned_for_model_use(self) -> None:
+        from data_quality import quality_report
+
+        source = b"time_h,viable_cells\n0,100\nunknown,120\n24,150\n"
+        data, notes = standardize_measurements(source)
+        self.assertEqual(len(data), 2)
+        self.assertEqual(data.attrs["invalid_time_count"], 1)
+        self.assertTrue(any("无法解析" in note for note in notes))
+        report = quality_report(data)
+        self.assertFalse(report["is_minimum_model_ready"])
+        self.assertTrue(any("原始 CSV" in issue for issue, _ in report["blocked"]))
+
+    def test_source_time_order_warning_survives_sorting(self) -> None:
+        from data_quality import quality_report
+
+        data, _ = standardize_measurements(b"time_h,viable_cells\n24,120\n0,100\n48,150\n")
+        self.assertEqual(data["time_h"].tolist(), [0, 24, 48])
+        self.assertTrue(any("时间倒序" in issue for issue, _ in quality_report(data)["warnings"]))
+
     def test_comparison_interpolates_and_calculates_residual(self) -> None:
         simulation = pd.DataFrame({"time_h": [0, 2], "viable_cells": [100.0, 200.0]})
         observations = pd.DataFrame({"time_h": [1], "viable_cells": [140.0]})
