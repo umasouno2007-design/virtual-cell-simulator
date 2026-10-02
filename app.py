@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
-from runtime_storage import restore_culture_checkpoint, session_state_path
+from runtime_storage import restore_culture_checkpoint, restore_runtime_clock, session_state_path
 
 from intracellular import IntracellularState, intracellular_status
 from cell_communication import CellCommunicationState, representative_subpopulation_points
@@ -461,15 +461,15 @@ def load_runtime_state() -> bool:
         if payload.get("version") != APP_STATE_VERSION:
             return False
         cell, history = restore_culture_checkpoint(payload)
+        wall_time, multiplier = restore_runtime_clock(payload, set(TIME_MULTIPLIERS))
         st.session_state.cell = cell
         st.session_state.history = history[-MAX_HISTORY_POINTS:]
         st.session_state.profile_key = cell.profile_key
         st.session_state.preset_name = payload.get("preset_name", "标准培养")
         st.session_state.running = bool(payload.get("running", False)) and cell.alive
         st.session_state.run_message = payload.get("run_message", "尚未运行")
-        st.session_state.last_wall_time = float(payload.get("last_wall_time", time.time()))
-        multiplier = int(payload.get("time_multiplier", 60))
-        st.session_state.time_multiplier = multiplier if multiplier in TIME_MULTIPLIERS else 60
+        st.session_state.last_wall_time = wall_time
+        st.session_state.time_multiplier = multiplier
         intracellular_payload = payload.get("intracellular", {})
         allowed_fields = IntracellularState.__dataclass_fields__
         st.session_state.intracellular = IntracellularState(**{

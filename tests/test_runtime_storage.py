@@ -5,7 +5,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from cell import CellCulture
-from runtime_storage import restore_culture_checkpoint, session_state_path
+from runtime_storage import restore_culture_checkpoint, restore_runtime_clock, session_state_path
 
 
 class RuntimeStorageTests(unittest.TestCase):
@@ -58,3 +58,17 @@ class RuntimeStorageTests(unittest.TestCase):
         payload["history"][0]["time_h"] = -1.0
         with self.assertRaisesRegex(ValueError, "单调"):
             restore_culture_checkpoint(payload)
+
+    def test_invalid_runtime_clock_cannot_enter_realtime_catch_up(self):
+        valid = {"last_wall_time": 1000.0, "time_multiplier": 60}
+        self.assertEqual(restore_runtime_clock(valid, {1, 60}), (1000.0, 60))
+        for invalid in (
+            {"last_wall_time": float("nan"), "time_multiplier": 60},
+            {"last_wall_time": 1000.0, "time_multiplier": float("inf")},
+            {"last_wall_time": 1000.0, "time_multiplier": 1.5},
+            {"last_wall_time": 1000.0, "time_multiplier": True},
+            {"last_wall_time": 1000.0, "time_multiplier": 999},
+        ):
+            with self.subTest(payload=invalid):
+                with self.assertRaisesRegex(ValueError, "时钟或时间倍率"):
+                    restore_runtime_clock(invalid, {1, 60})

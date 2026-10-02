@@ -82,3 +82,22 @@ def restore_culture_checkpoint(payload: dict) -> tuple[CellCulture, list[dict]]:
     if abs(previous_time - cell.time_h) > 1e-6:
         raise ValueError("运行检查点的当前时钟与时间线末点不一致。")
     return cell, history
+
+
+def restore_runtime_clock(payload: dict, allowed_multipliers: set[int]) -> tuple[float, int]:
+    """Validate the wall-clock anchor and speed before a saved run can catch up."""
+
+    try:
+        wall_time = payload["last_wall_time"]
+        raw_multiplier = payload["time_multiplier"]
+        if isinstance(wall_time, bool) or isinstance(raw_multiplier, bool):
+            raise ValueError
+        wall_time = float(wall_time)
+        multiplier = int(raw_multiplier)
+        if float(raw_multiplier) != multiplier:
+            raise ValueError
+    except (KeyError, TypeError, ValueError, OverflowError):
+        raise ValueError("运行检查点的时钟或时间倍率无效。") from None
+    if not isfinite(wall_time) or wall_time <= 0 or multiplier not in allowed_multipliers:
+        raise ValueError("运行检查点的时钟或时间倍率超出有效范围。")
+    return wall_time, multiplier
