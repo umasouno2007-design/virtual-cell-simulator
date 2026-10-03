@@ -7,6 +7,7 @@
 from hashlib import sha256
 from io import BytesIO
 import re
+import warnings
 from typing import Iterable
 
 import pandas as pd
@@ -29,8 +30,13 @@ _ALIASES = {
     "glucose_mM": ("glucose_mm", "glucose", "葡萄糖", "葡萄糖mm", "葡萄糖（mm）", "葡萄糖（mmol/l）"),
     "lactate_mM": ("lactate_mm", "lactate", "乳酸", "乳酸mm", "乳酸（mm）", "乳酸（mmol/l）"),
     "pH": ("ph",),
-    "oxygen_percent": ("oxygen_percent", "oxygen", "do", "dissolved oxygen", "氧", "溶氧", "溶氧%", "氧（%）"),
+    # 泛称“溶氧/DO”可能表示饱和度、分压或质量浓度，不能自动映射成模型氧代理。
+    "oxygen_percent": ("oxygen_percent", "局部氧可用性代理", "局部氧代理"),
 }
+
+# 交互式原型的解析资源边界，不是实验时间点或数据质量的科学标准。
+MAX_CSV_BYTES = 5 * 1024 * 1024
+MAX_CSV_ROWS = 5_000
 
 
 def measurement_fingerprint(contents: bytes) -> str:
@@ -46,13 +52,24 @@ def _normalized_header(value: object) -> str:
 def _read_csv(contents: bytes) -> pd.DataFrame:
     """支持常见 UTF-8 与 Windows 中文 CSV 编码。"""
 
+    if len(contents) > MAX_CSV_BYTES:
+        raise ValueError("CSV 超过当前在线原型的 5 MiB 解析上限；请保留原始文件并上传所需时间序列副本。")
     last_error: UnicodeDecodeError | None = None
     for encoding in ("utf-8-sig", "gb18030"):
         try:
             # 保留 NA 等原始文本，区分“明确缺测”与拼写/单位错误。
-            return pd.read_csv(BytesIO(contents), encoding=encoding, keep_default_na=False)
+            # 禁止 pandas 在数据列多于表头时把首列隐式当作索引，
+            # 否则未加引号的千位分隔符会悄悄错位时间与观测值。
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", pd.errors.ParserWarning)
+                return pd.read_csv(
+                    BytesIO(contents), encoding=encoding, keep_default_na=False,
+                    index_col=False, on_bad_lines="error",
+                )
         except UnicodeDecodeError as error:
             last_error = error
+        except pd.errors.ParserWarning:
+            raise ValueError("CSV 数据行列数与表头不一致；请检查未加引号的千位分隔符或多余逗号。") from None
     raise ValueError("CSV 编码无法识别；请保存为 UTF-8 或 GB18030 后重试。") from last_error
 
 
@@ -60,6 +77,8 @@ def standardize_measurements(contents: bytes) -> tuple[pd.DataFrame, list[str]]:
     """读取 CSV 并转为项目标准列名。至少需要时间列。"""
 
     raw = _read_csv(contents)
+    if len(raw) > MAX_CSV_ROWS:
+        raise ValueError(f"CSV 超过当前在线原型的 {MAX_CSV_ROWS:,} 行解析上限；请保留原始文件并筛选所需时间序列副本。")
     if raw.empty:
         raise ValueError("CSV 不含数据行。")
     headers: dict[str, list[object]] = {}
@@ -126,6 +145,9 @@ def standardize_measurements(contents: bytes) -> tuple[pd.DataFrame, list[str]]:
     ignored = [str(column) for column in raw.columns if column not in mapped.values()]
     if ignored:
         notes.append(f"未用于比较的列：{'、'.join(ignored)}。")
+        oxygen_like = {"oxygen", "do", "dissolvedoxygen", "氧", "溶氧", "溶氧%", "氧（%）"}
+        if any(_normalized_header(column) in oxygen_like for column in ignored):
+            notes.append("泛称氧/DO/溶氧列未自动映射到模型氧代理；请核对测量定义与单位，只有具备对应依据时才使用 oxygen_percent 列。")
     data = data.reset_index(drop=True)
     data.attrs["duplicate_time_count"] = duplicate_time_count
     data.attrs["invalid_time_count"] = invalid_time_count

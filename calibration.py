@@ -22,6 +22,7 @@ _SNAPSHOT_FIELDS = {
     "viable_cells": "viable_cells", "dead_cells": "dead_cells", "time_h": "time_h",
     "glucose_mM": "glucose_mm", "glutamine_mM": "glutamine_mm", "lactate_mM": "lactate_mm",
     "oxygen_percent": "oxygen_percent", "pH": "ph", "temperature_C": "temperature_c",
+    "oxygen_setpoint_percent": "oxygen_setpoint_percent",
     "CO2_percent": "co2_percent", "osmolality_mOsm_kg": "osmolality_mosm_kg",
     "drug_uM": "drug_um", "energy_index": "energy_index",
 }

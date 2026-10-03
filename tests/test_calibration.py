@@ -83,10 +83,15 @@ class CalibrationTestCase(unittest.TestCase):
         initial = low_oxygen.snapshot()
         low_oxygen.step(1.0)
         template = CellCulture("a549")
-        template.oxygen_setpoint_percent = 2.0
         replayed, rows = replay_from_initial(template, initial, [1.0], 1.0, 1.0)
         self.assertAlmostEqual(replayed.oxygen_percent, low_oxygen.oxygen_percent)
         self.assertAlmostEqual(rows[-1]["oxygen_percent"], low_oxygen.oxygen_percent)
+
+        legacy_initial = dict(initial)
+        legacy_initial.pop("oxygen_setpoint_percent")
+        template.oxygen_setpoint_percent = 2.0
+        legacy_replayed, _ = replay_from_initial(template, legacy_initial, [1.0], 1.0, 1.0)
+        self.assertAlmostEqual(legacy_replayed.oxygen_percent, low_oxygen.oxygen_percent)
 
     def test_grid_search_rejects_extreme_finite_measurement_horizon(self) -> None:
         cell = CellCulture("hela")

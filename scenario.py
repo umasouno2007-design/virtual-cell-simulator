@@ -65,6 +65,12 @@ def import_scenario(payload: bytes | str | dict) -> tuple[CellCulture, dict]:
             f"场景模型版本为 {data['model_version']}，当前版本为 {MODEL_VERSION}；"
             "请使用匹配版本载入，或在当前版本重新配置输入。"
         )
+    for name in ("created_at", "evidence_level"):
+        if not isinstance(data[name], str) or not data[name].strip():
+            raise ValueError(f"场景元数据 {name} 必须是非空文本。")
+    for name in ("calibration_status", "limitations"):
+        if name in data and (not isinstance(data[name], str) or not data[name].strip()):
+            raise ValueError(f"场景元数据 {name} 必须是非空文本。")
     fingerprint = data.get("data_file_fingerprint")
     if fingerprint is not None and (
         not isinstance(fingerprint, str) or not re.fullmatch(r"[0-9a-f]{64}", fingerprint)
@@ -139,6 +145,7 @@ def import_scenario(payload: bytes | str | dict) -> tuple[CellCulture, dict]:
         raise ValueError("初始活细胞数必须为有限非负数。")
     cell = CellCulture(cell_data["profile_key"], volume, area, initial_cells, parameters)
     # 旧 v1 文件没有 resume_state，按原格式从 t=0 / dead=0 载入。
+    # 一旦声明续跑状态，则所有动力学起点字段必须齐全，不能部分回退默认值。
     resume = data.get("resume_state", {})
     if not isinstance(resume, dict):
         raise ValueError("resume_state 必须是 JSON 对象。")
@@ -148,6 +155,11 @@ def import_scenario(payload: bytes | str | dict) -> tuple[CellCulture, dict]:
         "last_growth_rate_per_h": (0.0, None),
         "last_death_rate_per_h": (0.0, None),
     }
+    if "resume_state" in data:
+        missing_resume = set(resume_fields).difference(resume)
+        unknown_resume = set(resume).difference(resume_fields)
+        if missing_resume or unknown_resume:
+            raise ValueError("续跑状态字段不完整或未知：" + "、".join(sorted(missing_resume | unknown_resume)))
     for name, (minimum, maximum) in resume_fields.items():
         if name not in resume:
             continue

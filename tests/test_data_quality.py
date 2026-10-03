@@ -57,6 +57,23 @@ class DataQualityTests(unittest.TestCase):
         }))
         self.assertTrue(any("pH 超出" in item[0] for item in high_ph["blocked"]))
 
+    def test_ph_outside_model_domain_is_not_certified_for_alignment(self):
+        for extreme in (6.1, 8.1):
+            with self.subTest(pH=extreme):
+                report = quality_report(pd.DataFrame({
+                    "time_h": [0, 24, 48],
+                    "viable_cells": [100, 120, 150],
+                    "pH": [7.4, extreme, 7.2],
+                }))
+                self.assertFalse(report["is_minimum_model_ready"])
+                self.assertTrue(any("当前培养模型" in issue for issue, _ in report["blocked"]))
+        at_boundaries = quality_report(pd.DataFrame({
+            "time_h": [0, 24, 48],
+            "viable_cells": [100, 120, 150],
+            "pH": [6.2, 7.4, 8.0],
+        }))
+        self.assertTrue(at_boundaries["is_minimum_model_ready"])
+
     def test_oxygen_saturation_percent_is_not_silently_compared_as_model_proxy(self):
         saturation = quality_report(pd.DataFrame({
             "time_h": [0, 24, 48], "oxygen_percent": [80, 75, 70], "viable_cells": [1, 2, 3],

@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
-from runtime_storage import restore_culture_checkpoint, restore_runtime_clock, session_state_path
+from runtime_storage import clear_failed_restore, restore_culture_checkpoint, restore_runtime_clock, session_state_path
 
 from intracellular import IntracellularState, intracellular_status
 from cell_communication import CellCommunicationState, representative_subpopulation_points
@@ -264,7 +264,7 @@ st.markdown(
 
 # 运行时状态格式与科学模型版本分开：前者可因持久化结构变化而调整，后者用于结果可追溯。
 # 保持此值可兼容已有本机运行状态；科学输出统一使用 MODEL_VERSION。
-APP_STATE_VERSION = "1.1.0"
+APP_STATE_VERSION = "1.2.0"
 RUNTIME_STATE_PATH = Path(__file__).with_name(".runtime_state.json")
 MAX_HISTORY_POINTS = 2000
 
@@ -545,7 +545,8 @@ def load_runtime_state() -> bool:
             **(metadata if isinstance(metadata, dict) else {}),
         }
         return True
-    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, OverflowError, json.JSONDecodeError):
+        clear_failed_restore(st.session_state)
         return False
 
 
@@ -751,6 +752,8 @@ def initialize_state() -> None:
     if "cell" not in st.session_state or "history" not in st.session_state:
         if not load_runtime_state():
             st.session_state.cell, st.session_state.history = new_simulation()
+            st.session_state.profile_key = st.session_state.cell.profile_key
+            st.session_state.preset_name = "标准培养"
     if "run_message" not in st.session_state:
         st.session_state.run_message = "尚未运行"
     if "running" not in st.session_state:

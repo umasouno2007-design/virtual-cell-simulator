@@ -83,6 +83,37 @@ class ExperimentDataTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "对应多个 CSV 列"):
             standardize_measurements(source)
 
+    def test_unquoted_thousands_separator_cannot_shift_time_axis(self) -> None:
+        source = b"time_h,viable_cells\n0,1,000\n24,2,000\n"
+        with self.assertRaisesRegex(ValueError, "列数与表头不一致"):
+            standardize_measurements(source)
+
+    def test_explicitly_quoted_comma_is_not_silently_shifted(self) -> None:
+        source = b'time_h,viable_cells\n0,"1,000"\n24,"2,000"\n'
+        data, _ = standardize_measurements(source)
+        self.assertEqual(data["time_h"].tolist(), [0, 24])
+        # 千位格式仍需用户显式转换；不能误认为 1 或 2 个细胞。
+        self.assertEqual(data.attrs["invalid_numeric_counts"]["viable_cells"], 2)
+
+    def test_dissolved_oxygen_alias_is_not_assumed_to_be_model_proxy(self) -> None:
+        source = b"time_h,viable_cells,DO\n0,100,8\n24,130,7\n"
+        data, notes = standardize_measurements(source)
+        self.assertNotIn("oxygen_percent", data.columns)
+        self.assertTrue(any("未自动映射" in note for note in notes))
+        explicit, _ = standardize_measurements(
+            b"time_h,viable_cells,oxygen_percent\n0,100,18\n24,130,17\n"
+        )
+        self.assertIn("oxygen_percent", explicit.columns)
+
+    def test_oversized_csv_is_rejected_before_alignment(self) -> None:
+        from experiment_data import MAX_CSV_BYTES, MAX_CSV_ROWS
+
+        with self.assertRaisesRegex(ValueError, "5 MiB"):
+            standardize_measurements(b"x" * (MAX_CSV_BYTES + 1))
+        rows = b"time_h,viable_cells\n" + b"0,100\n" * (MAX_CSV_ROWS + 1)
+        with self.assertRaisesRegex(ValueError, "行解析上限"):
+            standardize_measurements(rows)
+
     def test_comparison_interpolates_and_calculates_residual(self) -> None:
         simulation = pd.DataFrame({"time_h": [0, 2], "viable_cells": [100.0, 200.0]})
         observations = pd.DataFrame({"time_h": [1], "viable_cells": [140.0]})

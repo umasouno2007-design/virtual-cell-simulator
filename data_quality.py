@@ -80,8 +80,15 @@ def quality_report(data: pd.DataFrame) -> dict:
             "氧列需要单独核对测量定义",
             "即使在 0–21% 范围内，模型氧代理也不自动等同于实测溶氧、氧分压或培养箱头空间氧。",
         ))
-    if "pH" in data and (pd.to_numeric(data["pH"], errors="coerce").dropna() > 14).any():
-        blocked.append(("pH 超出 0–14 的常规标度", "核对 CSV 中的酸碱指标单位与列映射。"))
+    if "pH" in data:
+        observed_ph = pd.to_numeric(data["pH"], errors="coerce").dropna()
+        if (observed_ph > 14).any():
+            blocked.append(("pH 超出 0–14 的常规标度", "核对 CSV 中的酸碱指标单位与列映射。"))
+        elif ((observed_ph < 6.2) | (observed_ph > 8.0)).any():
+            blocked.append((
+                "pH 超出当前培养模型 6.2–8.0 的状态范围",
+                "该测量可能有效，但现有模型会在范围边界裁剪 pH；请核对单位，并避免将此区间外数据用于当前模型对齐或校准。",
+            ))
     available = [
         field for field in ("viable_cells", "glucose_mM", "lactate_mM")
         if field in data and pd.to_numeric(data[field], errors="coerce").notna().sum() >= 2

@@ -66,6 +66,25 @@ class ScenarioTests(unittest.TestCase):
                     import_scenario(payload)
                 payload = export_scenario(CellCulture("a549"))
 
+    def test_partial_or_unknown_resume_state_does_not_silently_default(self):
+        payload = export_scenario(CellCulture("a549"))
+        payload["resume_state"].pop("dead_cells")
+        with self.assertRaisesRegex(ValueError, "续跑状态字段不完整"):
+            import_scenario(payload)
+        payload = export_scenario(CellCulture("a549"))
+        payload["resume_state"]["dead_cell"] = 0.0
+        with self.assertRaisesRegex(ValueError, "续跑状态字段不完整或未知"):
+            import_scenario(payload)
+
+    def test_traceability_metadata_must_be_readable_text(self):
+        for field, value in (("created_at", []), ("evidence_level", ""),
+                             ("calibration_status", False), ("limitations", {})):
+            with self.subTest(field=field):
+                payload = export_scenario(CellCulture("a549"))
+                payload[field] = value
+                with self.assertRaisesRegex(ValueError, f"场景元数据 {field}"):
+                    import_scenario(payload)
+
     def test_missing_field_is_explained(self):
         with self.assertRaisesRegex(ValueError, "缺少字段"):
             import_scenario({"schema": "e-cell-scenario/v1"})

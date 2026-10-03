@@ -5,10 +5,18 @@ from dataclasses import asdict
 from pathlib import Path
 
 from cell import CellCulture
-from runtime_storage import restore_culture_checkpoint, restore_runtime_clock, session_state_path
+from runtime_storage import clear_failed_restore, restore_culture_checkpoint, restore_runtime_clock, session_state_path
 
 
 class RuntimeStorageTests(unittest.TestCase):
+    def test_failed_restore_discards_partial_session_fields(self):
+        session = {
+            "app_state_version": "1.2.0", "cell": "partially restored",
+            "history": ["corrupt"], "intracellular": "old state",
+        }
+        clear_failed_restore(session)
+        self.assertEqual(session, {"app_state_version": "1.2.0"})
+
     @staticmethod
     def _checkpoint() -> dict:
         cell = CellCulture("a549")
@@ -63,6 +71,23 @@ class RuntimeStorageTests(unittest.TestCase):
         payload = self._checkpoint()
         payload["history"][-1]["glucose_mM"] -= 1.0
         with self.assertRaisesRegex(ValueError, "当前培养状态与时间线末点不一致"):
+            restore_culture_checkpoint(payload)
+
+    def test_checkpoint_rejects_invalid_earlier_history_even_if_latest_matches(self):
+        payload = self._checkpoint()
+        payload["history"] = [dict(payload["history"][0]), dict(payload["history"][0])]
+        payload["history"][0]["glucose_mM"] = -1.0
+        with self.assertRaisesRegex(ValueError, "glucose_mM 超出"):
+            restore_culture_checkpoint(payload)
+        payload["history"][0] = dict(payload["history"][1])
+        payload["history"][0]["viability_percent"] = 101.0
+        with self.assertRaisesRegex(ValueError, "viability_percent 超出"):
+            restore_culture_checkpoint(payload)
+
+    def test_checkpoint_rejects_wrong_model_version_in_history(self):
+        payload = self._checkpoint()
+        payload["history"][0]["model_version"] = "1.1.0"
+        with self.assertRaisesRegex(ValueError, "模型版本不一致"):
             restore_culture_checkpoint(payload)
 
     def test_invalid_runtime_clock_cannot_enter_realtime_catch_up(self):

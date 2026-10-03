@@ -74,8 +74,9 @@ class CellCultureTestCase(unittest.TestCase):
 
     def test_snapshot_has_units(self) -> None:
         snapshot = CellCulture("hela").snapshot()
-        for key in ("time_h", "glucose_mM", "lactate_mM", "temperature_C", "drug_uM"):
+        for key in ("time_h", "glucose_mM", "lactate_mM", "temperature_C", "drug_uM", "oxygen_setpoint_percent", "model_version"):
             self.assertIn(key, snapshot)
+        self.assertNotEqual(snapshot["model_version"], "")
 
     def test_run_steps_records_each_step(self) -> None:
         cell, history = new_simulation("a549")
@@ -162,6 +163,41 @@ class CellCultureTestCase(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "growth_scale"):
                     cell.step(1.0)
                 self.assertEqual(cell.time_h, 0.0)
+
+    def test_negative_rate_or_uptake_cannot_create_negative_outputs(self) -> None:
+        for name in ("death_rate_per_h", "uptake_scale", "oxygen_transfer_per_h"):
+            cell = CellCulture("hela")
+            before = cell.snapshot()
+            setattr(cell.parameters, name, -0.1)
+            with self.subTest(parameter=name):
+                with self.assertRaisesRegex(ValueError, name):
+                    cell.step(1.0)
+                self.assertEqual(cell.snapshot(), before)
+
+    def test_extreme_finite_growth_and_drug_inputs_stay_bounded(self) -> None:
+        cell = CellCulture("hela")
+        cell.parameters.growth_scale = 1e308
+        with self.assertRaisesRegex(ValueError, "数值安全范围"):
+            cell.step(1.0)
+        self.assertEqual(cell.time_h, 0.0)
+
+        treated = CellCulture("hela")
+        treated.drug_um = 1e308
+        treated.parameters.drug_hill = 100.0
+        modifier = treated.growth_modifiers()["drug"]
+        self.assertTrue(math.isfinite(modifier))
+        self.assertGreaterEqual(modifier, 0.0)
+        self.assertLessEqual(modifier, 1.0)
+
+    def test_stable_hill_calculation_matches_original_formula_in_normal_range(self) -> None:
+        cell = CellCulture("hela")
+        for concentration in (0.0, 2.0, 10.0, 20.0):
+            cell.drug_um = concentration
+            expected = 1.0 / (
+                1.0 + (concentration / cell.parameters.drug_ic50_um) ** cell.parameters.drug_hill
+            )
+            with self.subTest(drug_um=concentration):
+                self.assertAlmostEqual(cell.growth_modifiers()["drug"], expected)
 
     def test_zero_saturation_parameters_do_not_divide_by_zero(self) -> None:
         cell = CellCulture("hela")

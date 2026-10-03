@@ -5,6 +5,7 @@ from math import exp, isfinite, log
 from typing import Dict
 
 from profiles import CellProfile, get_profile
+from version import MODEL_VERSION
 
 
 def _finite_nonnegative(value: float, fallback: float = 0.0) -> float:
@@ -135,9 +136,13 @@ class CellCulture:
         lactate = 1.0 / (
             1.0 + (_finite_nonnegative(self.lactate_mm) / lactate_inhibition) ** 2
         )
-        drug = 1.0 / (
-            1.0 + (self.drug_um / max(0.001, p.drug_ic50_um)) ** p.drug_hill
-        )
+        drug_ratio = _finite_nonnegative(self.drug_um) / max(0.001, p.drug_ic50_um)
+        # 与 1/(1+ratio**hill) 数学等价；ratio 很大时避免幂运算溢出。
+        if drug_ratio <= 1.0:
+            drug = 1.0 / (1.0 + drug_ratio ** p.drug_hill)
+        else:
+            reciprocal = drug_ratio ** (-p.drug_hill)
+            drug = reciprocal / (1.0 + reciprocal)
         contact = max(0.0, 1.0 - self.viable_cells / self.carrying_capacity)
         return {
             "glucose": glucose,
@@ -185,6 +190,8 @@ class CellCulture:
         mu = mu_max * p.growth_scale
         for value in modifiers.values():
             mu *= value
+        if not isfinite(mu) or mu * dt_h > 100.0:
+            raise ValueError("增长指数超出当前软件的数值安全范围；请核对参数和初始细胞数。")
 
         stress = 1.0 - min(
             modifiers["ph"], modifiers["temperature"], modifiers["osmolality"],
@@ -255,12 +262,21 @@ class CellCulture:
         self.last_death_rate_per_h = death_rate
 
     def _validate_finite_parameters(self) -> None:
+        nonnegative = {
+            "growth_scale", "uptake_scale", "death_rate_per_h",
+            "glucose_half_saturation_mm", "glutamine_half_saturation_mm",
+            "oxygen_half_saturation_percent", "lactate_inhibition_mm",
+            "oxygen_transfer_per_h",
+        }
+        positive = {"drug_ic50_um", "drug_hill", "buffer_capacity_mm_per_ph"}
         for field in fields(ModelParameters):
             value = getattr(self.parameters, field.name)
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise ValueError(f"模型参数 {field.name} 必须是有限数值。")
             if not isfinite(value):
                 raise ValueError(f"模型参数 {field.name} 必须是有限数值。")
+            if (field.name in nonnegative and value < 0) or (field.name in positive and value <= 0):
+                raise ValueError(f"模型参数 {field.name} 的符号或零值不符合当前方程要求。")
 
     def exchange_medium(self, fraction: float = 1.0) -> None:
         """更换指定比例培养基，1.0 表示全量换液。"""
@@ -291,11 +307,13 @@ class CellCulture:
 
         return {
             "time_h": self.time_h, "cell_type": self.profile_key,
+            "model_version": MODEL_VERSION,
             "viable_cells": self.viable_cells, "dead_cells": self.dead_cells,
             "viability_percent": self.viability_percent,
             "confluence_percent": self.confluence_percent,
             "glucose_mM": self.glucose_mm, "glutamine_mM": self.glutamine_mm,
             "lactate_mM": self.lactate_mm, "oxygen_percent": self.oxygen_percent,
+            "oxygen_setpoint_percent": self.oxygen_setpoint_percent,
             "pH": self.ph, "temperature_C": self.temperature_c,
             "CO2_percent": self.co2_percent,
             "osmolality_mOsm_kg": self.osmolality_mosm_kg,
