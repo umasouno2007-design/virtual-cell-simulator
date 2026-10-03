@@ -5,7 +5,12 @@ from dataclasses import asdict
 from pathlib import Path
 
 from cell import CellCulture
-from runtime_storage import clear_failed_restore, restore_culture_checkpoint, restore_runtime_clock, session_state_path
+from cell_communication import CellCommunicationState
+from intracellular import IntracellularState
+from runtime_storage import (
+    clear_failed_restore, restore_culture_checkpoint, restore_representative_checkpoint,
+    restore_runtime_clock, session_state_path,
+)
 
 
 class RuntimeStorageTests(unittest.TestCase):
@@ -103,3 +108,66 @@ class RuntimeStorageTests(unittest.TestCase):
             with self.subTest(payload=invalid):
                 with self.assertRaisesRegex(ValueError, "时钟或时间倍率"):
                     restore_runtime_clock(invalid, {1, 60})
+
+    @staticmethod
+    def _representative_checkpoint() -> dict:
+        intracellular = IntracellularState()
+        communication = CellCommunicationState()
+        return {
+            "intracellular": asdict(intracellular),
+            "intracellular_history": [intracellular.snapshot()],
+            "cell_communication": asdict(communication),
+            "cell_communication_history": [communication.snapshot()],
+        }
+
+    def test_representative_checkpoint_restores_valid_states(self):
+        payload = self._representative_checkpoint()
+        intracellular, history, communication, communication_history = (
+            restore_representative_checkpoint(payload, culture_time_h=0.0)
+        )
+        self.assertEqual(history[-1], intracellular.snapshot())
+        self.assertEqual(communication_history[-1], communication.snapshot())
+
+    def test_representative_checkpoint_rejects_clock_mismatch_with_culture(self):
+        payload = self._representative_checkpoint()
+        with self.assertRaisesRegex(ValueError, "时钟与培养时钟不一致"):
+            restore_representative_checkpoint(payload, culture_time_h=1.0)
+
+    def test_representative_checkpoint_rejects_invalid_relative_states(self):
+        for field, invalid in (("atp_percent", float("nan")), ("ros_percent", 120.0),
+                               ("cytosolic_calcium_nm", -1.0), ("cycle_phase", "unknown")):
+            with self.subTest(field=field):
+                payload = self._representative_checkpoint()
+                payload["intracellular"][field] = invalid
+                with self.assertRaises(ValueError):
+                    restore_representative_checkpoint(payload)
+        payload = self._representative_checkpoint()
+        payload["cell_communication"]["injured_fraction"] = 70.0
+        with self.assertRaisesRegex(ValueError, "比例不守恒"):
+            restore_representative_checkpoint(payload)
+        payload = self._representative_checkpoint()
+        payload["intracellular"]["cycle_phase"] = "M"
+        with self.assertRaisesRegex(ValueError, "阶段与进度不一致"):
+            restore_representative_checkpoint(payload)
+
+    def test_representative_checkpoint_rejects_stale_history_endpoint(self):
+        payload = self._representative_checkpoint()
+        payload["intracellular_history"][-1]["ATP_percent"] -= 1.0
+        with self.assertRaisesRegex(ValueError, "历史末点与当前状态不一致"):
+            restore_representative_checkpoint(payload)
+        payload = self._representative_checkpoint()
+        payload["cell_communication_history"][-1]["stress_signal_index"] += 1.0
+        with self.assertRaisesRegex(ValueError, "历史末点与当前状态不一致"):
+            restore_representative_checkpoint(payload)
+
+    def test_representative_checkpoint_rejects_corrupt_earlier_history(self):
+        payload = self._representative_checkpoint()
+        payload["intracellular_history"].insert(0, dict(payload["intracellular_history"][0]))
+        payload["intracellular_history"][0]["ROS_percent"] = -1.0
+        with self.assertRaisesRegex(ValueError, "ROS_percent 超出"):
+            restore_representative_checkpoint(payload)
+        payload = self._representative_checkpoint()
+        payload["cell_communication_history"].insert(0, dict(payload["cell_communication_history"][0]))
+        payload["cell_communication_history"][0]["stressed_fraction"] += 1.0
+        with self.assertRaisesRegex(ValueError, "历史子群比例不守恒"):
+            restore_representative_checkpoint(payload)

@@ -1,0 +1,2 @@
+# Keep the distributable teaching dataset byte-stable across Git checkouts.
+data/a549_teaching_synthetic.csv text eol=lf

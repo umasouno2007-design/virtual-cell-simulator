@@ -134,6 +134,19 @@ class ScenarioTests(unittest.TestCase):
         _, imported = import_scenario(payload)
         self.assertEqual(imported["events"], [event])
 
+    def test_pending_event_cannot_claim_an_execution_timestamp(self):
+        payload = export_scenario(CellCulture("a549"), events=[{
+            "at_time_h": 12.0, "action": "补充葡萄糖", "value": 1.0,
+            "status": "pending", "executed_at_h": 12.0,
+        }])
+        with self.assertRaisesRegex(ValueError, "待执行操作却含实际处理时间"):
+            import_scenario(payload)
+        skipped = export_scenario(CellCulture("a549"), events=[{
+            "at_time_h": 0.0, "action": "补充葡萄糖", "value": 1.0,
+            "status": "skipped", "executed_at_h": 0.0,
+        }])
+        self.assertEqual(import_scenario(skipped)[1]["events"][0]["status"], "skipped")
+
     def test_exported_events_do_not_alias_session_actions(self):
         event = {"at_time_h": 12.0, "action": "补充葡萄糖", "value": 1.0, "status": "pending"}
         payload = export_scenario(CellCulture("a549"), events=[event])

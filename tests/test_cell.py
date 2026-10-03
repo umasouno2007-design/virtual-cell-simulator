@@ -164,6 +164,18 @@ class CellCultureTestCase(unittest.TestCase):
                     cell.step(1.0)
                 self.assertEqual(cell.time_h, 0.0)
 
+    def test_large_finite_cell_counts_do_not_fake_zero_viability_or_overflow(self) -> None:
+        cell = CellCulture("hela", viable_cells=1.7e308)
+        cell.dead_cells = 1.7e308
+        self.assertAlmostEqual(cell.viability_percent, 50.0)
+
+        cell = CellCulture("hela", surface_area_cm2=1e305, viable_cells=1.7e308)
+        cell.parameters.growth_scale = 20.0
+        with self.assertRaisesRegex(ValueError, "细胞数量超出当前软件的数值安全范围"):
+            cell.step(1.0)
+        self.assertTrue(math.isfinite(cell.viable_cells))
+        self.assertEqual(cell.time_h, 0.0)
+
     def test_negative_rate_or_uptake_cannot_create_negative_outputs(self) -> None:
         for name in ("death_rate_per_h", "uptake_scale", "oxygen_transfer_per_h"):
             cell = CellCulture("hela")

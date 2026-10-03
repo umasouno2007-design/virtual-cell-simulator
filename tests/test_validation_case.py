@@ -6,6 +6,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import subprocess
 import sys
+from unittest.mock import patch
+
+import scripts.validate_a549_teaching_case as validation_case
 
 from scripts.validate_a549_teaching_case import (
     DEFAULT_DATA, _template_from_observed_start, run_case,
@@ -15,6 +18,18 @@ from version import MODEL_VERSION
 
 
 class ValidationCaseTestCase(unittest.TestCase):
+    def test_bundled_teaching_fingerprint_is_line_ending_independent(self) -> None:
+        original = DEFAULT_DATA.read_bytes().replace(b"\r\n", b"\n")
+        with TemporaryDirectory() as temporary:
+            checkout = Path(temporary) / "a549_teaching_synthetic.csv"
+            checkout.write_bytes(original.replace(b"\n", b"\r\n"))
+            with patch.object(validation_case, "DEFAULT_DATA", checkout):
+                result = validation_case.run_case(data_path=checkout, output_dir=None)
+                self.assertEqual(result["data_file_sha256"], validation_case.EXPECTED_TEACHING_SHA256)
+                checkout.write_bytes(checkout.read_bytes().replace(b"250000", b"250001", 1))
+                with self.assertRaisesRegex(ValueError, "内容指纹不一致"):
+                    validation_case.run_case(data_path=checkout, output_dir=None)
+
     def test_a549_teaching_case_has_train_and_holdout_metrics(self) -> None:
         result = run_case(output_dir=None)
 
@@ -44,6 +59,8 @@ class ValidationCaseTestCase(unittest.TestCase):
             result = run_case(data_path=custom, output_dir=None)
         self.assertEqual(result["data_kind"], "user_supplied_unverified")
         self.assertEqual(result["data_source"], "user-supplied CSV (path withheld)")
+        self.assertIn("template replay", result["case"])
+        self.assertTrue(any("细胞系" in item for item in result["quality_warnings"]))
         self.assertNotIn(str(custom), str(result))
 
     def test_invalid_holdout_observation_blocks_custom_case(self) -> None:

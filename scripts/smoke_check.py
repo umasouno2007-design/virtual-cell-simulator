@@ -17,10 +17,12 @@ from cell_scenario import (
 )
 from experiment_manifest import build_manifest
 from intracellular import IntracellularState
+from intracellular_forecast import forecast_intracellular_state
 from microcolony import MicrocolonyState
 from microenvironment import MicroenvironmentState
 from scenario import import_scenario
 from scripts.validate_a549_teaching_case import run_case
+from virtual_assays import simulate_virtual_assay
 
 
 def _single_cell_run() -> tuple[IntracellularState, MicroenvironmentState, list[dict], list[dict]]:
@@ -102,6 +104,18 @@ def main() -> None:
     restored_colony, _ = import_microcolony_scenario(colony_payload)
     assert restored_colony.summary() == colony.summary()
     assert restored_colony.history == colony.history
+
+    # 次级教学工具只消费复制的相对状态；其输出须可在无网页环境中生成。
+    forecast = forecast_intracellular_state(
+        CellCulture("a549"), IntracellularState(),
+        attribute="oxygen_percent", value=5.0, horizon_h=1.0,
+    )
+    assert forecast["completed_h"] == 1.0
+    assert forecast["candidate_state"]["ATP_percent"] >= 0.0
+    assay = simulate_virtual_assay(
+        "atp_luminescence", IntracellularState().snapshot(), replicates=2, seed=1,
+    )
+    assert len(assay) == 2 and all(row["is_synthetic_demo"] for row in assay)
 
     print("smoke check passed")
 

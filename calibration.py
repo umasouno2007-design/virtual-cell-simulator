@@ -1,13 +1,14 @@
 """可审阅的两参数网格搜索校准。"""
 
 from dataclasses import dataclass, replace
-from math import isfinite
+from math import isclose, isfinite
 
 import pandas as pd
 
 from cell import CellCulture, ModelParameters
 from data_quality import quality_report
-from experiment_data import comparison_frame, residual_summary
+from experiment_data import FIELD_LABELS, comparison_frame, residual_summary
+from version import MODEL_VERSION
 
 
 FIT_FIELDS = ("viable_cells", "glucose_mM", "lactate_mM")
@@ -40,6 +41,7 @@ class CalibrationResult:
     holdout_time_h: list[float] | None = None
     training_metrics: list[dict] | None = None
     holdout_metrics: list[dict] | None = None
+    warnings: list[str] | None = None
 
 
 def _make_cell(template: CellCulture, initial: dict, growth_scale: float, uptake_scale: float) -> CellCulture:
@@ -59,6 +61,10 @@ def _make_cell(template: CellCulture, initial: dict, growth_scale: float, uptake
 def replay_from_initial(template: CellCulture, initial: dict, target_times, growth_scale: float, uptake_scale: float) -> tuple[CellCulture, list[dict]]:
     """从历史首点重演至有限目标时刻；每段内部步长不超过 1 h。"""
 
+    if not isinstance(initial, dict) or initial.get("cell_type") != template.profile_key:
+        raise ValueError("校准重演起点的细胞系与当前模板不一致；请核对实验来源。")
+    if initial.get("model_version") != MODEL_VERSION:
+        raise ValueError("校准重演起点的模型版本不一致；不能混合不同版本结果。")
     cell = _make_cell(template, initial, growth_scale, uptake_scale)
     history = [cell.snapshot()]
     try:
@@ -136,6 +142,21 @@ def fit_growth_and_uptake(
         raise ValueError("没有可作为初始条件的模拟历史。")
     if "time_h" not in measurements.columns:
         raise ValueError("实测数据缺少 time_h 列，无法与模拟时间轴对齐。")
+    previous_model_time = -1.0
+    for row in model_history:
+        if not isinstance(row, dict) or row.get("cell_type") != template.profile_key or row.get("model_version") != MODEL_VERSION:
+            raise ValueError("模拟历史含不同细胞系或模型版本；不能混用为校准起点。")
+        try:
+            model_time = float(row["time_h"])
+        except (KeyError, TypeError, ValueError, OverflowError):
+            raise ValueError("模拟历史时间必须是有限非负小时数。") from None
+        if not isfinite(model_time) or model_time < previous_model_time:
+            raise ValueError("模拟历史时间必须是有限非负且单调不减的小时数。")
+        for field in FIT_FIELDS:
+            value = row.get(field)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value) or value < 0:
+                raise ValueError(f"模拟历史字段 {field} 必须是有限非负数值。")
+        previous_model_time = model_time
     initial = model_history[0]
     initial_time = float(initial.get("time_h", 0.0))
     if not isfinite(initial_time) or initial_time < 0:
@@ -191,6 +212,18 @@ def fit_growth_and_uptake(
     report = quality_report(measurements)
     if report["blocked"]:
         raise ValueError(f"实测数据质量阻止粗校准：{report['blocked'][0][0]}。{report['blocked'][0][1]}")
+    initial_warnings = []
+    start_rows = measurements.loc[measurement_times == initial_time]
+    if not start_rows.empty:
+        for field in FIT_FIELDS:
+            if field not in measurements or field not in initial:
+                continue
+            observed = pd.to_numeric(start_rows[field], errors="coerce").iloc[0]
+            if pd.notna(observed) and not isclose(float(observed), float(initial[field]), rel_tol=1e-6, abs_tol=1e-9):
+                initial_warnings.append(
+                    f"{FIELD_LABELS[field]}的起点观测与模拟初值不同；两个缩放参数不能修正起点差异，"
+                    "请核对接种量、培养基和时间原点。"
+                )
     growth_candidates = [round(value / 10, 1) for value in range(1, 21)]
     uptake_candidates = [round(value / 10, 1) for value in range(1, 31)]
     best: tuple[float, float, float] | None = None
@@ -205,7 +238,7 @@ def fit_growth_and_uptake(
     if best is None:
         raise ValueError("实测时间点超出可重演范围，无法完成粗校准。")
     _, replayed = replay_from_initial(template, initial, [item["time_h"] for item in model_history], best[1], best[2])
-    return CalibrationResult(best[1], best[2], best[0], replayed, grid_scores, weights or {})
+    return CalibrationResult(best[1], best[2], best[0], replayed, grid_scores, weights or {}, warnings=initial_warnings)
 
 
 def fit_with_temporal_holdout(

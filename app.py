@@ -13,7 +13,10 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
-from runtime_storage import clear_failed_restore, restore_culture_checkpoint, restore_runtime_clock, session_state_path
+from runtime_storage import (
+    clear_failed_restore, restore_culture_checkpoint, restore_representative_checkpoint,
+    restore_runtime_clock, session_state_path,
+)
 
 from intracellular import IntracellularState, intracellular_status
 from cell_communication import CellCommunicationState, representative_subpopulation_points
@@ -462,6 +465,9 @@ def load_runtime_state() -> bool:
             return False
         cell, history = restore_culture_checkpoint(payload)
         wall_time, multiplier = restore_runtime_clock(payload, set(TIME_MULTIPLIERS))
+        intracellular, intracellular_history, communication, communication_history = (
+            restore_representative_checkpoint(payload, culture_time_h=cell.time_h)
+        )
         st.session_state.cell = cell
         st.session_state.history = history[-MAX_HISTORY_POINTS:]
         st.session_state.profile_key = cell.profile_key
@@ -470,30 +476,10 @@ def load_runtime_state() -> bool:
         st.session_state.run_message = payload.get("run_message", "尚未运行")
         st.session_state.last_wall_time = wall_time
         st.session_state.time_multiplier = multiplier
-        intracellular_payload = payload.get("intracellular", {})
-        allowed_fields = IntracellularState.__dataclass_fields__
-        st.session_state.intracellular = IntracellularState(**{
-            name: value for name, value in intracellular_payload.items()
-            if name in allowed_fields
-        })
-        intracellular_history = payload.get("intracellular_history")
-        st.session_state.intracellular_history = (
-            intracellular_history[-MAX_HISTORY_POINTS:]
-            if isinstance(intracellular_history, list) and intracellular_history
-            else [st.session_state.intracellular.snapshot()]
-        )
-        communication_payload = payload.get("cell_communication", {})
-        communication_fields = CellCommunicationState.__dataclass_fields__
-        st.session_state.cell_communication = CellCommunicationState(**{
-            name: value for name, value in communication_payload.items()
-            if name in communication_fields
-        })
-        communication_history = payload.get("cell_communication_history")
-        st.session_state.cell_communication_history = (
-            communication_history[-MAX_HISTORY_POINTS:]
-            if isinstance(communication_history, list) and communication_history
-            else [st.session_state.cell_communication.snapshot()]
-        )
+        st.session_state.intracellular = intracellular
+        st.session_state.intracellular_history = intracellular_history[-MAX_HISTORY_POINTS:]
+        st.session_state.cell_communication = communication
+        st.session_state.cell_communication_history = communication_history[-MAX_HISTORY_POINTS:]
         st.session_state.communication_feedback_enabled = bool(
             payload.get("communication_feedback_enabled", False)
         )
@@ -1104,6 +1090,8 @@ def render_scientific_status_panel(cell) -> None:
             st.caption(f"校准候选：growth={result.growth_scale:.1f}；uptake={result.uptake_scale:.1f}")
             if result.growth_scale in (0.1, 2.0) or result.uptake_scale in (0.1, 3.0):
                 st.warning("最佳参数位于搜索边界，不能解释为可靠校准。")
+            for warning in getattr(result, "warnings", None) or []:
+                st.warning(warning)
     with st.expander("参数证据等级", expanded=False):
         st.markdown("- **A**：直接来源支持的关系\n- **B**：方向有依据、数值待校准\n- **C**：教学/可视化规则")
     data = pd.DataFrame(st.session_state.history)
@@ -1744,7 +1732,7 @@ def measurement_data_panel(cell, history) -> pd.DataFrame | None:
                 st.pyplot(figure)
                 plt.close(figure)
                 near = grid[grid["normalized_rmse"] <= result.normalized_rmse * 1.05]
-                warnings = []
+                warnings = list(getattr(result, "warnings", None) or [])
                 if result.growth_scale in (0.1, 2.0) or result.uptake_scale in (0.1, 3.0):
                     warnings.append("最佳点位于搜索边界；不能据此解释为可靠校准。")
                 if len(measurements) < 5:
@@ -1824,6 +1812,8 @@ def render_analysis_workspace(cell) -> None:
             st.info("尚无粗校准结果。此模块不使用黑箱优化器，也不提供置信区间。")
         else:
             st.success(f"当前候选：growth_scale={result.growth_scale:.1f}；uptake_scale={result.uptake_scale:.1f}。请结合训练误差、留出点状态与边界警告解释。")
+            for warning in getattr(result, "warnings", None) or []:
+                st.warning(warning)
             if result.holdout_metrics:
                 st.dataframe(pd.DataFrame(result.holdout_metrics), hide_index=True, width="stretch")
             elif result.holdout_time_h:
@@ -2646,6 +2636,7 @@ def intracellular_forecast_panel(cell, state: IntracellularState) -> None:
 
     with st.expander("细胞内条件沙盒", expanded=False):
         st.caption("条件推演会复制当前状态，不会改写正在运行的实验；结果仅为未校准的模型趋势。")
+        st.caption("氧输入只改变推演起点的局部氧代理；后续仍受原培养环境氧设定值影响，并非持续低氧干预。该代理不等同于培养箱设定氧、实测溶氧或组织氧张力。")
         input_key = st.selectbox(
             "候选条件", list(FORECAST_INPUTS),
             format_func=lambda key: FORECAST_INPUTS[key]["label"], key="forecast_input",
@@ -2659,13 +2650,17 @@ def intracellular_forecast_panel(cell, state: IntracellularState) -> None:
         )
         horizon_h = horizon_col.slider("推演时长（h）", 1.0, 24.0, 6.0, 1.0, key="forecast_horizon")
         if run_col.button("运行条件推演", width="stretch"):
-            st.session_state.intracellular_forecast = forecast_intracellular_state(
-                cell, state, attribute=input_key, value=candidate_value, horizon_h=horizon_h
-            )
-            record_event(
-                "运行细胞内条件沙盒",
-                f"{specification['label']}={candidate_value:g}{specification['unit']}；{horizon_h:g} h（不改写实验）",
-            )
+            try:
+                st.session_state.intracellular_forecast = forecast_intracellular_state(
+                    cell, state, attribute=input_key, value=candidate_value, horizon_h=horizon_h
+                )
+                record_event(
+                    "运行细胞内条件沙盒",
+                    f"{specification['label']}={candidate_value:g}{specification['unit']}；{horizon_h:g} h（不改写实验）",
+                )
+            except ValueError as error:
+                st.session_state.pop("intracellular_forecast", None)
+                st.error(f"无法完成条件推演：{error}")
         report = st.session_state.get("intracellular_forecast")
         if report is None:
             st.info("设置候选条件并运行推演，可查看与当前状态的模型差异。")
@@ -2709,23 +2704,27 @@ def virtual_assay_panel(state: IntracellularState) -> None:
         settings_col.caption(assay["note"])
         if generate_col.button("生成合成检测读出", width="stretch"):
             run_number = len(st.session_state.virtual_assay_rows) + 1
-            rows = simulate_virtual_assay(
-                assay_key, state.snapshot(), replicates=replicates,
-                noise_percent=noise_percent, seed=run_number,
-            )
-            for row in rows:
-                row.update({
-                    "run": run_number,
-                    "time_h": round(state.time_h, 6),
-                    "cycle_phase": state.cycle_phase,
-                })
-            st.session_state.virtual_assay_rows.extend(rows)
-            st.session_state.virtual_assay_rows = st.session_state.virtual_assay_rows[-2000:]
-            record_event(
-                "生成虚拟检测", f"{assay['label']}；n={replicates}；变异={noise_percent:g}%（合成演示）"
-            )
-            st.toast(f"已生成 {replicates} 个 {assay['label']} 合成重复孔", icon=":material/info:")
-            save_runtime_state()
+            try:
+                rows = simulate_virtual_assay(
+                    assay_key, state.snapshot(), replicates=replicates,
+                    noise_percent=noise_percent, seed=run_number,
+                )
+            except ValueError as error:
+                st.error(f"无法生成合成检测读出：{error}")
+            else:
+                for row in rows:
+                    row.update({
+                        "run": run_number,
+                        "time_h": round(state.time_h, 6),
+                        "cycle_phase": state.cycle_phase,
+                    })
+                st.session_state.virtual_assay_rows.extend(rows)
+                st.session_state.virtual_assay_rows = st.session_state.virtual_assay_rows[-2000:]
+                record_event(
+                    "生成虚拟检测", f"{assay['label']}；n={replicates}；变异={noise_percent:g}%（合成演示）"
+                )
+                st.toast(f"已生成 {replicates} 个 {assay['label']} 合成重复孔", icon=":material/info:")
+                save_runtime_state()
 
         rows = st.session_state.get("virtual_assay_rows", [])
         if rows:

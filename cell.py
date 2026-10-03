@@ -94,9 +94,14 @@ class CellCulture:
 
     @property
     def viability_percent(self) -> float:
-        if self.total_cells <= 0:
+        # Scale before summing: two finite counts near the float limit can have
+        # an infinite sum, which otherwise reports a false 0% viability.
+        scale = max(self.viable_cells, self.dead_cells)
+        if scale <= 0:
             return 0.0
-        return min(100.0, max(0.0, 100.0 * self.viable_cells / self.total_cells))
+        viable = self.viable_cells / scale
+        dead = self.dead_cells / scale
+        return min(100.0, max(0.0, 100.0 * viable / (viable + dead)))
 
     @property
     def carrying_capacity(self) -> float:
@@ -212,11 +217,15 @@ class CellCulture:
 
         start_viable = self.viable_cells
         new_cells = start_viable * max(0.0, exp(mu * dt_h) - 1.0)
+        if not isfinite(new_cells) or not isfinite(start_viable + new_cells):
+            raise ValueError("细胞数量超出当前软件的数值安全范围；请核对初始条件和培养面积。")
         deaths = min(start_viable + new_cells, start_viable * death_rate * dt_h)
+        if not isfinite(deaths) or not isfinite(self.dead_cells + deaths):
+            raise ValueError("死亡细胞数量超出当前软件的数值安全范围；请核对初始条件。")
         self.viable_cells = max(0.0, start_viable + new_cells - deaths)
         self.dead_cells += deaths
 
-        average_viable = (start_viable + self.viable_cells) / 2.0
+        average_viable = start_viable / 2.0 + self.viable_cells / 2.0
         glucose_umol = (
             average_viable * self.profile.glucose_uptake_pmol_cell_h
             * p.uptake_scale * dt_h / 1e6

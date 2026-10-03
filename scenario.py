@@ -102,6 +102,8 @@ def import_scenario(payload: bytes | str | dict) -> tuple[CellCulture, dict]:
         if not isinstance(status, str) or status not in {"pending", "executed", "skipped"}:
             raise ValueError(f"第 {index} 个计划操作状态不受支持。")
         if "executed_at_h" in event:
+            if status == "pending":
+                raise ValueError(f"第 {index} 个待执行操作却含实际处理时间。")
             try:
                 executed_at = _scenario_float(event["executed_at_h"])
             except (TypeError, ValueError):

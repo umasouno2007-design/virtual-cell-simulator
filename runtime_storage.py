@@ -8,6 +8,8 @@ from math import isclose, isfinite
 from pathlib import Path
 
 from cell import CellCulture
+from cell_communication import CellCommunicationState
+from intracellular import IntracellularState
 from scenario import import_scenario
 from version import MODEL_VERSION, SCENARIO_SCHEMA_VERSION
 
@@ -132,3 +134,105 @@ def restore_runtime_clock(payload: dict, allowed_multipliers: set[int]) -> tuple
     if not isfinite(wall_time) or wall_time <= 0 or multiplier not in allowed_multipliers:
         raise ValueError("运行检查点的时钟或时间倍率超出有效范围。")
     return wall_time, multiplier
+
+
+def restore_representative_checkpoint(
+    payload: dict, *, culture_time_h: float | None = None,
+) -> tuple[IntracellularState, list[dict], CellCommunicationState, list[dict]]:
+    """Validate relative teaching states and their saved endpoints before UI restore."""
+
+    def finite_number(value: object, name: str, low: float, high: float) -> float:
+        if isinstance(value, bool):
+            raise ValueError(f"运行检查点的 {name} 不是有效数值。")
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(f"运行检查点的 {name} 不是有效数值。") from None
+        if not isfinite(numeric) or not low <= numeric <= high:
+            raise ValueError(f"运行检查点的 {name} 超出允许范围。")
+        return numeric
+
+    raw_cell = payload.get("intracellular")
+    raw_communication = payload.get("cell_communication")
+    if not isinstance(raw_cell, dict) or not isinstance(raw_communication, dict):
+        raise ValueError("运行检查点缺少细胞内或通信状态。")
+    cell_fields = IntracellularState.__dataclass_fields__
+    communication_fields = CellCommunicationState.__dataclass_fields__
+    if not set(cell_fields).issubset(raw_cell) or not set(communication_fields).issubset(raw_communication):
+        raise ValueError("运行检查点的代表性状态字段不完整。")
+    clean_cell = {}
+    for name in cell_fields:
+        if name == "cycle_phase":
+            phase = raw_cell[name]
+            if phase not in {"G1", "S", "G2", "M"}:
+                raise ValueError("运行检查点的细胞周期阶段无效。")
+            clean_cell[name] = phase
+        else:
+            low, high = (50.0, 1200.0) if name == "cytosolic_calcium_nm" else (
+                (0.0, 1e7) if name == "time_h" else (0.0, 100.0)
+            )
+            clean_cell[name] = finite_number(raw_cell[name], name, low, high)
+    cell = IntracellularState(**clean_cell)
+    if cell.cycle_phase != IntracellularState._phase_from_progress(cell.cycle_progress_percent):
+        raise ValueError("运行检查点的细胞周期阶段与进度不一致。")
+    clean_communication = {
+        name: finite_number(raw_communication[name], name, 0.0, 1e7 if name == "time_h" else 100.0)
+        for name in communication_fields
+    }
+    communication = CellCommunicationState(**clean_communication)
+    if culture_time_h is not None and (
+        not isclose(cell.time_h, culture_time_h, rel_tol=0.0, abs_tol=1e-6)
+        or not isclose(communication.time_h, culture_time_h, rel_tol=0.0, abs_tol=1e-6)
+    ):
+        raise ValueError("运行检查点的代表性状态时钟与培养时钟不一致。")
+    if not isclose(
+        communication.resilient_fraction + communication.stressed_fraction + communication.injured_fraction,
+        100.0, abs_tol=1e-6,
+    ):
+        raise ValueError("运行检查点的代表性子群比例不守恒。")
+
+    def validate_history(rows: object, snapshot: dict, label: str) -> list[dict]:
+        if not isinstance(rows, list) or not rows or any(not isinstance(row, dict) for row in rows):
+            raise ValueError(f"运行检查点的{label}历史格式无效。")
+        previous_time = -1.0
+        for row in rows:
+            if not set(snapshot).issubset(row):
+                raise ValueError(f"运行检查点的{label}历史字段不完整。")
+            time_h = finite_number(row["time_h"], f"{label}历史.time_h", 0.0, 1e7)
+            if time_h < previous_time:
+                raise ValueError(f"运行检查点的{label}历史时间不是单调序列。")
+            previous_time = time_h
+            for name in snapshot:
+                if name == "time_h":
+                    continue
+                if name == "cycle_phase":
+                    if row[name] not in {"G1", "S", "G2", "M"}:
+                        raise ValueError(f"运行检查点的{label}历史周期阶段无效。")
+                    if row[name] != IntracellularState._phase_from_progress(float(row["cycle_progress_percent"])):
+                        raise ValueError(f"运行检查点的{label}历史周期阶段与进度不一致。")
+                    continue
+                low, high = (50.0, 1200.0) if name == "calcium_nM" else (0.0, 100.0)
+                finite_number(row[name], f"{label}历史.{name}", low, high)
+            if label == "通信" and not isclose(
+                float(row["resilient_fraction"]) + float(row["stressed_fraction"])
+                + float(row["injured_fraction"]), 100.0, abs_tol=1e-6,
+            ):
+                raise ValueError("运行检查点的历史子群比例不守恒。")
+        last = rows[-1]
+        for name, expected in snapshot.items():
+            if name not in last:
+                raise ValueError(f"运行检查点的{label}历史末点缺少 {name}。")
+            if isinstance(expected, str):
+                matches = last[name] == expected
+            else:
+                actual = finite_number(last[name], f"{label}历史末点.{name}", 0.0, 1e7)
+                matches = isclose(actual, expected, rel_tol=1e-9, abs_tol=1e-6)
+            if not matches:
+                raise ValueError(f"运行检查点的{label}历史末点与当前状态不一致：{name}。")
+        return rows
+
+    cell_history = validate_history(payload.get("intracellular_history"), cell.snapshot(), "细胞内")
+    communication_history = validate_history(
+        payload.get("cell_communication_history"), communication.snapshot(), "通信",
+    )
+    return cell, cell_history, communication, communication_history

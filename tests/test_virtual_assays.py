@@ -21,6 +21,21 @@ class VirtualAssayTestCase(unittest.TestCase):
         second = simulate_virtual_assay("ros_fluorescence", snapshot, seed=11)
         self.assertEqual(first, second)
 
+    def test_invalid_synthetic_assay_inputs_are_rejected_not_clipped(self) -> None:
+        snapshot = {"ROS_percent": 30.0}
+        for kwargs in (
+            {"replicates": 0}, {"replicates": 13}, {"replicates": 2.5},
+            {"noise_percent": float("nan")}, {"noise_percent": -1.0},
+            {"noise_percent": 31.0}, {"seed": True},
+        ):
+            with self.subTest(kwargs=kwargs):
+                with self.assertRaises(ValueError):
+                    simulate_virtual_assay("ros_fluorescence", snapshot, **kwargs)
+        for invalid in (-1.0, 101.0, float("inf"), float("nan"), True):
+            with self.subTest(index=invalid):
+                with self.assertRaises(ValueError):
+                    simulate_virtual_assay("ros_fluorescence", {"ROS_percent": invalid})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -25,6 +25,17 @@ class CalibrationTestCase(unittest.TestCase):
         self.assertLess(result.normalized_rmse, 0.01)
         self.assertEqual(len(result.grid_scores or []), 600)
 
+    def test_calibration_flags_observed_initial_state_mismatch_without_changing_fit(self) -> None:
+        cell = CellCulture("a549")
+        initial = cell.snapshot()
+        cell.step(1.0)
+        observations = pd.DataFrame([initial, cell.snapshot()])[["time_h", "viable_cells", "glucose_mM"]]
+        observations.loc[0, "viable_cells"] *= 1.2
+        result = fit_growth_and_uptake(CellCulture("a549"), [initial], observations)
+        self.assertTrue(result.grid_scores)
+        self.assertTrue(any("活细胞数" in message for message in result.warnings or []))
+        self.assertFalse(any("葡萄糖" in message for message in result.warnings or []))
+
     def test_zero_weight_is_supported_but_negative_is_rejected(self) -> None:
         cell = CellCulture("hela")
         initial = cell.snapshot()
@@ -48,6 +59,21 @@ class CalibrationTestCase(unittest.TestCase):
         })
         with self.assertRaisesRegex(ValueError, "早于模拟历史起点"):
             fit_growth_and_uptake(cell, [initial], measurements)
+
+    def test_calibration_rejects_mixed_or_reversed_simulation_history(self) -> None:
+        cell = CellCulture("a549")
+        initial = cell.snapshot()
+        cell.step(1.0)
+        later = cell.snapshot()
+        observations = pd.DataFrame([initial, later])[["time_h", "viable_cells"]]
+        with self.assertRaisesRegex(ValueError, "单调不减"):
+            fit_growth_and_uptake(cell, [later, initial], observations)
+        mixed = dict(later, cell_type="hela")
+        with self.assertRaisesRegex(ValueError, "不同细胞系或模型版本"):
+            fit_growth_and_uptake(cell, [initial, mixed], observations)
+        invalid = dict(initial, glucose_mM=float("nan"))
+        with self.assertRaisesRegex(ValueError, "模拟历史字段 glucose_mM"):
+            fit_growth_and_uptake(cell, [invalid, later], observations)
 
     def test_measurements_without_time_column_get_clear_error(self) -> None:
         cell = CellCulture("hela")
@@ -92,6 +118,16 @@ class CalibrationTestCase(unittest.TestCase):
         template.oxygen_setpoint_percent = 2.0
         legacy_replayed, _ = replay_from_initial(template, legacy_initial, [1.0], 1.0, 1.0)
         self.assertAlmostEqual(legacy_replayed.oxygen_percent, low_oxygen.oxygen_percent)
+
+    def test_replay_rejects_mixed_cell_line_or_model_version(self) -> None:
+        template = CellCulture("a549")
+        other_line = CellCulture("hela").snapshot()
+        with self.assertRaisesRegex(ValueError, "细胞系与当前模板不一致"):
+            replay_from_initial(template, other_line, [1.0], 1.0, 1.0)
+        old_version = template.snapshot()
+        old_version["model_version"] = "0.9.0"
+        with self.assertRaisesRegex(ValueError, "模型版本不一致"):
+            replay_from_initial(template, old_version, [1.0], 1.0, 1.0)
 
     def test_grid_search_rejects_extreme_finite_measurement_horizon(self) -> None:
         cell = CellCulture("hela")

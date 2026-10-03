@@ -6,6 +6,7 @@
 """
 
 from random import Random
+from math import isfinite
 from typing import Any
 
 
@@ -41,7 +42,15 @@ def assay_base_value(assay_key: str, snapshot: dict[str, float | str]) -> float:
     """将内部相对指数映射为仅用于展示的合成读出基线。"""
 
     metric = ASSAYS[assay_key]["metric"]
-    index = float(snapshot[metric])
+    try:
+        raw = snapshot[metric]
+        if isinstance(raw, bool):
+            raise ValueError
+        index = float(raw)
+    except (KeyError, TypeError, ValueError, OverflowError):
+        raise ValueError(f"虚拟检测缺少有效的 {metric} 相对指数。") from None
+    if not isfinite(index) or not 0.0 <= index <= 100.0:
+        raise ValueError(f"虚拟检测的 {metric} 相对指数须在 0–100。")
     if assay_key == "atp_luminescence":
         return 1_000.0 * index
     if assay_key == "mitochondrial_probe":
@@ -63,8 +72,18 @@ def simulate_virtual_assay(
 
     if assay_key not in ASSAYS:
         raise KeyError(f"未知虚拟检测：{assay_key}")
-    replicates = max(1, min(12, int(replicates)))
-    noise_percent = max(0.0, min(30.0, float(noise_percent)))
+    if type(replicates) is not int or not 1 <= replicates <= 12:
+        raise ValueError("合成重复孔数必须是 1–12 的整数；不会静默截断。")
+    if isinstance(noise_percent, bool):
+        raise ValueError("演示性孔间变异必须是 0–30% 内的有限数值。")
+    try:
+        noise_percent = float(noise_percent)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("演示性孔间变异必须是 0–30% 内的有限数值。") from None
+    if not isfinite(noise_percent) or not 0.0 <= noise_percent <= 30.0:
+        raise ValueError("演示性孔间变异必须是 0–30% 内的有限数值。")
+    if type(seed) is not int:
+        raise ValueError("合成读出随机种子必须是整数。")
     assay = ASSAYS[assay_key]
     base = assay_base_value(assay_key, snapshot)
     rng = Random(seed)

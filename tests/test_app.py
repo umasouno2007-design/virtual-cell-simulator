@@ -42,6 +42,17 @@ class AppStateTestCase(unittest.TestCase):
         self.assertTrue(any("操作完成" in item.value for item in app.success))
         self.assertEqual(len(app.exception), 0)
 
+    def test_calibration_initial_mismatch_warning_is_visible(self) -> None:
+        app_path = Path(__file__).resolve().parents[1] / "app.py"
+        app = AppTest.from_file(app_path).run(timeout=30)
+        self._set_mode(app, "培养环境与数据工作流")
+        app.session_state["coarse_calibration"] = CalibrationResult(
+            1.0, 1.0, 0.1, [], warnings=["活细胞数的起点观测与模拟初值不同；请核对时间原点。"],
+        )
+        app.run(timeout=30)
+        self.assertTrue(any("起点观测与模拟初值不同" in item.value for item in app.warning))
+        self.assertEqual(len(app.exception), 0)
+
     def test_oxygen_change_triggers_bubbles(self) -> None:
         app_path = Path(__file__).resolve().parents[1] / "app.py"
         app = AppTest.from_file(app_path).run(timeout=30)

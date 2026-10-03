@@ -64,8 +64,13 @@ def run_case(data_path: Path = DEFAULT_DATA, output_dir: Path | None = None) -> 
     """拟合训练点并对留出点报告误差，返回 JSON 可序列化结果。"""
 
     contents = data_path.read_bytes()
-    fingerprint = measurement_fingerprint(contents)
     bundled_example = data_path.resolve() == DEFAULT_DATA.resolve()
+    # Git may check out the committed LF CSV with CRLF on Windows. Only the
+    # bundled, immutable teaching example uses a canonical line-ending hash;
+    # user-supplied data retain their exact raw-byte fingerprint.
+    fingerprint = measurement_fingerprint(
+        contents.replace(b"\r\n", b"\n") if bundled_example else contents
+    )
     if bundled_example and fingerprint != EXPECTED_TEACHING_SHA256:
         raise ValueError("仓库教学合成 CSV 与记录的内容指纹不一致；请恢复原始示例后复跑。")
     observations, _ = standardize_measurements(contents)
@@ -98,11 +103,13 @@ def run_case(data_path: Path = DEFAULT_DATA, output_dir: Path | None = None) -> 
     validation_comparison = comparison_frame(prediction, validation)
     result = {
         "model_version": MODEL_VERSION,
-        "case": "A549 teaching synthetic holdout validation" if bundled_example else "A549 user-supplied temporal holdout assessment",
+        "case": "A549 teaching synthetic holdout validation" if bundled_example else "A549 template replay against unverified user-supplied observations",
         "data_kind": "teaching_synthetic_not_experimental" if bundled_example else "user_supplied_unverified",
         "data_source": "data/a549_teaching_synthetic.csv" if bundled_example else "user-supplied CSV (path withheld)",
         "data_file_sha256": fingerprint,
-        "quality_warnings": [issue for issue, _ in quality["warnings"]],
+        "quality_warnings": [issue for issue, _ in quality["warnings"]] + ([] if bundled_example else [
+            "用户文件的细胞系、培养条件和来源未经核对；A549 仅表示本脚本使用的模型模板。"
+        ]),
         "initial_conditions": {"source": "observed 0 h (unverified for user files)", **initial_conditions},
         "training_time_h": list(TRAIN_TIMES),
         "validation_time_h": list(VALIDATION_TIMES),
@@ -116,7 +123,8 @@ def run_case(data_path: Path = DEFAULT_DATA, output_dir: Path | None = None) -> 
         "limitation": (
             "该案例仅验证软件流程，不构成真实 A549 培养动力学的外部或独立验证。"
             if bundled_example else
-            "用户数据来源未由本脚本核验；同序列时间留出不构成独立批次验证，不能据此做定量实验或临床结论。"
+            "用户数据的细胞系、培养条件和来源未由本脚本核验；A549 是模型模板而非文件身份认证。"
+            "同序列时间留出不构成独立批次验证，不能据此做定量实验或临床结论。"
         ),
     }
     if output_dir is not None:
@@ -142,7 +150,7 @@ def run_case(data_path: Path = DEFAULT_DATA, output_dir: Path | None = None) -> 
             axis.legend(fontsize=8)
         figure.suptitle(
             "A549 teaching synthetic data: train / holdout (not experimental)"
-            if bundled_example else "A549 user-supplied data: temporal holdout (source unverified)"
+            if bundled_example else "A549 template / unverified user file: temporal holdout"
         )
         figure.savefig(output_dir / "a549_training_holdout.png", dpi=160)
         plt.close(figure)

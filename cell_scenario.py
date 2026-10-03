@@ -441,6 +441,8 @@ def _state_from_mapping(values: dict) -> IntracellularState:
         raise ValueError("钙代理或时间超出允许范围。")
     if state.cycle_phase not in {"G1", "S", "G2", "M"}:
         raise ValueError("未知细胞周期阶段。")
+    if state.cycle_phase != IntracellularState._phase_from_progress(state.cycle_progress_percent):
+        raise ValueError("细胞周期阶段与进度不一致。")
     return state
 
 
@@ -518,6 +520,8 @@ def _validate_single_history(rows: list[dict], state: IntracellularState) -> Non
         cycle = row.get("cycle_phase")
         if cycle not in {"G1", "S", "G2", "M"}:
             raise ValueError("历史记录中的细胞周期阶段无效。")
+        if cycle != IntracellularState._phase_from_progress(float(row["cycle_progress_percent"])):
+            raise ValueError("历史细胞周期阶段与进度不一致。")
     if abs(previous_time - state.time_h) > 1e-6:
         raise ValueError("单细胞当前状态时间与历史末时点不一致。")
 
@@ -577,15 +581,20 @@ def _validate_colony_history(rows: list[dict], cell_ids: set[int], final_time: f
     previous_time = -1.0
     latest_by_cell: dict[int, dict] = {}
     seen_pairs: set[tuple[float, int]] = set()
+    current_time_ids: set[int] = set()
     for row in rows:
         _validate_history_environment(row, "微群体历史")
         time_h = _finite(row.get("time_h"), "history.time_h")
-        try:
-            cell_id = int(row.get("cell_id"))
-        except (TypeError, ValueError):
-            raise ValueError("微群体历史缺少有效 cell_id。") from None
+        cell_id = row.get("cell_id")
+        if type(cell_id) is not int:
+            raise ValueError("微群体历史 cell_id 必须是整数。")
         if time_h < previous_time or not 0 <= time_h <= final_time or cell_id not in cell_ids:
             raise ValueError("微群体历史时间顺序、范围或 cell_id 无效。")
+        if time_h != previous_time:
+            if current_time_ids and current_time_ids != cell_ids:
+                raise ValueError("微群体历史每个时点必须包含全部代表性细胞。")
+            current_time_ids = set()
+        current_time_ids.add(cell_id)
         pair = (time_h, cell_id)
         if pair in seen_pairs:
             raise ValueError("同一时间点的代表性细胞历史不得重复。")
@@ -603,6 +612,9 @@ def _validate_colony_history(rows: list[dict], cell_ids: set[int], final_time: f
         local_signal = _finite(row.get("local_signal_index"), "history.local_signal_index")
         if not 0 <= local_signal <= 100:
             raise ValueError("微群体历史局部信号超出 0–100。")
+        offset = _finite(row.get("baseline_offset_index"), "history.baseline_offset_index")
+        if not -10 <= offset <= 10:
+            raise ValueError("微群体历史初始差异指数超出允许范围。")
         for key in _HISTORY_INDEX_FIELDS:
             value = _finite(row.get(key), f"history.{key}")
             if not 0 <= value <= 100:
@@ -610,7 +622,13 @@ def _validate_colony_history(rows: list[dict], cell_ids: set[int], final_time: f
         calcium = _finite(row.get("calcium_nM"), "history.calcium_nM")
         if not 50 <= calcium <= 1200:
             raise ValueError("微群体历史钙代理超出 50–1200 nM。")
+        if row.get("cycle_phase") not in {"G1", "S", "G2", "M"}:
+            raise ValueError("微群体历史细胞周期阶段无效。")
+        if row["cycle_phase"] != IntracellularState._phase_from_progress(float(row["cycle_progress_percent"])):
+            raise ValueError("微群体历史细胞周期阶段与进度不一致。")
         latest_by_cell[cell_id] = row
+    if current_time_ids and current_time_ids != cell_ids:
+        raise ValueError("微群体历史每个时点必须包含全部代表性细胞。")
     for cell_id, row in latest_by_cell.items():
         if abs(float(row["time_h"]) - final_time) > 1e-6:
             raise ValueError(f"代表性细胞 {cell_id} 的历史未到达当前微群体时间。")

@@ -296,6 +296,19 @@ class CellScenarioTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "有限数值"):
             import_single_cell_scenario(payload)
 
+    def test_cycle_label_must_match_model_progress_in_current_and_history_state(self):
+        payload = export_single_cell_scenario(MicroenvironmentState(), IntracellularState(), [], [])
+        payload["current_state"]["cycle_phase"] = "M"
+        with self.assertRaisesRegex(ValueError, "阶段与进度不一致"):
+            import_single_cell_scenario(payload)
+        state = IntracellularState()
+        payload = export_single_cell_scenario(
+            MicroenvironmentState(), state, [state.snapshot()], [],
+        )
+        payload["history"][0]["cycle_phase"] = "S"
+        with self.assertRaisesRegex(ValueError, "阶段与进度不一致"):
+            import_single_cell_scenario(payload)
+
     def test_boolean_is_not_accepted_as_a_numeric_model_input(self):
         payload = export_single_cell_scenario(MicroenvironmentState(), IntracellularState(), [], [])
         payload["environment"]["glucose_mm"] = True
@@ -330,6 +343,29 @@ class CellScenarioTests(unittest.TestCase):
         payload = export_microcolony_scenario(colony, environment)
         payload["history"].append(copy.deepcopy(payload["history"][0]))
         with self.assertRaisesRegex(ValueError, "不得重复"):
+            import_microcolony_scenario(payload)
+
+    def test_microcolony_history_rejects_incomplete_timepoints_and_invalid_ids(self):
+        environment = MicroenvironmentState()
+        colony = MicrocolonyState(cell_count=3)
+        colony.step(environment, 1.0)
+        payload = export_microcolony_scenario(colony, environment)
+        payload["history"].pop(0)
+        with self.assertRaisesRegex(ValueError, "每个时点必须包含全部"):
+            import_microcolony_scenario(payload)
+
+        payload = export_microcolony_scenario(colony, environment)
+        payload["history"][0]["cell_id"] = True
+        with self.assertRaisesRegex(ValueError, "cell_id 必须是整数"):
+            import_microcolony_scenario(payload)
+
+        payload = export_microcolony_scenario(colony, environment)
+        payload["history"][0]["cycle_phase"] = "unknown"
+        with self.assertRaisesRegex(ValueError, "细胞周期阶段无效"):
+            import_microcolony_scenario(payload)
+        payload = export_microcolony_scenario(colony, environment)
+        payload["history"][0]["cycle_phase"] = "M"
+        with self.assertRaisesRegex(ValueError, "阶段与进度不一致"):
             import_microcolony_scenario(payload)
 
     def test_microcolony_environment_snapshot_is_range_checked(self):
