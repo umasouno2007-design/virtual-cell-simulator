@@ -1,0 +1,42 @@
+{
+  "schema": "e-cell-local-data-hypothesis/v1",
+  "status": "template_only",
+  "notice": "这是空白记录模板，不含真实项目结果。填入前须确认数据使用授权和来源；不要放入患者信息或原始表达矩阵。",
+  "source": {
+    "dataset_accession": null,
+    "study_citation": null,
+    "sample_accessions": [],
+    "tissue_and_condition": null,
+    "analysis_repository_or_protocol": null,
+    "analysis_version_or_commit": null,
+    "cell_annotation_method_and_version": null,
+    "pathway_gene_set_and_version": null,
+    "statistical_unit": null,
+    "source_checked_date": null
+  },
+  "observations": [
+    {
+      "cell_type": null,
+      "comparison": null,
+      "marker_genes": [],
+      "pathway_score_name": null,
+      "pathway_score_method": null,
+      "reported_direction": null,
+      "reported_value": null,
+      "reported_unit": null,
+      "uncertainty_or_adjusted_p_value": null,
+      "data_location": null
+    }
+  ],
+  "model_mapping": {
+    "question_only": null,
+    "existing_ecell_scenario_id": null,
+    "mapping_evidence_grade": "C",
+    "parameter_calibration_allowed": false,
+    "unmeasured_model_quantities": [],
+    "not_inferable": [
+      "表达差异不等于蛋白丰度、酶活、代谢通量、细胞器功能或命运改变。",
+      "本映射不证明因果关系，也不构成 e-cell 独立验证。"
+    ]
+  }
+}

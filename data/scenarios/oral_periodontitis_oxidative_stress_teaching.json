@@ -1,0 +1,81 @@
+{
+  "schema": "e-cell-data-inspired-hypothesis/v1",
+  "id": "oral-os-score-to-teaching-pulse",
+  "title": "口腔组织氧化应激表达模式：教学性单细胞压力脉冲",
+  "model_version": "1.2.0",
+  "source_data": {
+    "analysis_status": "本地口腔单细胞项目的分析表/结果未包含在当前可访问工作区；以下观察来自公开论文报告，不代表本地项目结果。",
+    "dataset": "GSE164241",
+    "series_scope": "GSE164241 包含健康及牙周炎牙龈/口腔黏膜样本；GSM5005043 是健康 buccal 样本，GSM5005058 是 Periodontitis gingiva 样本。",
+    "single_cell_sample_reference": "GSM5005043（单个 GEO 样本：BM150，Healthy，Buccal；系列中的牙周炎样本另有 accession）",
+    "disease_sample_reference": "GSM5005058（PD134；Periodontitis，Gingiva）",
+    "provenance_status": "unresolved_accession_scope",
+    "paper": "Song et al. 2023, Frontiers in Immunology, doi:10.3389/fimmu.2023.1181467",
+    "paper_url": "https://doi.org/10.3389/fimmu.2023.1181467",
+    "dataset_url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE164241",
+    "sample_url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSM5005043",
+    "disease_sample_url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSM5005058",
+    "reported_method": "论文方法将单细胞分析关联到 GSM5005043，并称其数据包含牙周炎受累口腔黏膜及一个正常样本；但 GEO 的 GSM5005043 是单个 Healthy、Buccal 的 BM150 样本，GSE164241 中牙周炎样本另有 accession。",
+    "provenance_conflict": "论文方法把单细胞分析与 GSM5005043 相联系，同时描述受累与正常样本；但该 accession 的 GEO 记录仅对应健康 BM150 buccal 样本，系列中的牙周炎样本使用其他 accession。故引用的单一 GSM 无法独立支持文中组间比较，实际输入样本清单和 Figure 9H 分析单位仍待核对。"
+  },
+  "observed_pattern": {
+    "cell_types": ["单核细胞", "T 细胞"],
+    "reported_genes": ["CASP3", "TXN", "IL1B"],
+    "reported_score": "论文称对每个细胞亚群计算氧化应激基因集 OSscore；当前映射未提取可追溯的具体分值或原始表达矩阵。",
+    "reported_result": "论文 Figure 9H 报告：受累位点单核细胞的氧化应激基因集表达评分较对照位点更活跃；T 细胞观察方向相反。论文关联的单一样本 accession 与所述病例—对照分析范围不一致，本项目未独立核验该比较。",
+    "source_location": "论文结果 3.8 节、Figure 9H；该研究另报告 CASP3、TXN、IL1B 表达与氧化应激相关分析。",
+    "evidence_type": "公开论文对转录本/基因集评分的报告，不是本仓库重新分析得到的结果。",
+    "caveat": "论文方法关联的 GSM5005043 是 GEO 登记的单个健康 buccal 样本 BM150；系列中的牙周炎样本另有 accession。需核对论文分析代码、实际输入样本清单及 Figure 9H 统计单位后，才能重分析该比较。现仅将其作为引用存在歧义的论文报告，不能视为本项目直接观察或独立复核结果。"
+  },
+  "teaching_hypothesis": {
+    "question": "可否用 e-cell 现有的教学性氧化压力干预，观察一个代表性细胞的 ROS、DNA 损伤和促凋亡压力相对指数如何随模型规则变化？",
+    "mapping_boundary": "这只是把‘氧化应激相关转录状态值得继续研究’转成一个机制探索问题；不是单核细胞、T 细胞或牙周炎的模型，也不声称对应任何基因或通路。",
+    "evidence_grade": "C 级教学映射"
+  },
+  "teaching_scenario": {
+    "default_enabled": false,
+    "mode": "单细胞实验室",
+    "initial_environment": {
+      "time_h": 0.0,
+      "local_oxygen_availability": 1.0,
+      "glucose_mM": 5.5,
+      "glucose_reference_mM": 5.5,
+      "lactate_mM": 0.0,
+      "pH": 7.4,
+      "temperature_C": 37.0,
+      "drug_uM": 0.0,
+      "local_confluence_percent": 10.0,
+      "doubling_time_h": 24.0,
+      "drug_ic50_uM": 10.0
+    },
+    "intervention_type": "existing_oxidative_stress_pulse",
+    "relative_input_index": 20.0,
+    "input_interpretation": "沿用 e-cell 已有按钮的教学性相对输入指数 20；不是剂量、浓度或由公开表达数据拟合所得。",
+    "suggested_observation": ["ROS 相对指数", "DNA 损伤相对指数", "促凋亡压力相对指数"],
+    "suggested_duration_h": 24.0,
+    "time_step_h": 1.0,
+    "reproduction": "下载按钮生成的 JSON 是 e-cell 单细胞场景格式，可在单细胞实验室通过‘导入单细胞场景 JSON’载入。场景起点已经记录一次相对输入指数 20 的教学脉冲；载入后以 1 h 时间步单步推进 24 h。结果仅反映 e-cell 现有教学规则。"
+  },
+  "evidence": {
+    "public_observation_grade": "reported-in-paper; sample provenance unresolved",
+    "model_mapping_grade": "C",
+    "parameter_calibration": "none"
+  },
+  "not_calibrated": [
+    "ROS、ATP、线粒体膜电位、DNA 损伤、ER 应激、自噬及促凋亡压力的权重、阈值和时间常数",
+    "任何基因表达、蛋白量、酶活、细胞器功能或基因集评分到 e-cell 相对指数的映射",
+    "氧化压力输入指数与真实实验处理剂量的关系",
+    "单核细胞或 T 细胞特异的 e-cell 模型参数"
+  ],
+  "not_inferable": [
+    "基因表达量不等于相应蛋白丰度、蛋白活性、ROS 浓度或细胞器功能",
+    "表达或基因集评分不能单独证明因果关系、细胞命运、凋亡细胞比例或通信强度",
+    "组织单细胞数据不能直接代表 A549、HeLa、HEK-293 培养细胞或体外培养液环境",
+    "公开数据没有校准本场景、e-cell 动力学参数或独立验证模型"
+  ],
+  "limitations": [
+    "教学情景不是公开数据的复现，也不会读取或拟合表达矩阵。",
+    "场景只记录显式的教学干预和 e-cell 配置，不改写模型默认值或核心规则。",
+    "输出是现有代表性细胞相对状态规则的演示结果，不是单细胞测量、空间组学、细胞通信预测或临床结论。"
+  ]
+}

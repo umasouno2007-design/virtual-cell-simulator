@@ -84,6 +84,10 @@ ROS 不能被一概视为损伤，ER 应激/UPR 与自噬可具有适应性或�
 
 胞质 Ca²⁺ 输出保留旧版 `calcium_nM` 字段名以兼容历史文件；当前仅为未校准的模型刻度，**不得解释为实测 nM 浓度**。见 [MODEL_CARD.md](MODEL_CARD.md)。
 
+## 公开数据启发的机制假设
+
+新增只读的“数据启发假设”页，示范如何把公开口腔单细胞论文中的来源报告表达模式转写为待检验的教学问题。公开表达数据不用于拟合 e-cell；数据到模型的映射为 C 级假设。页面同时提示论文关联的 GSM5005043 是健康 BM150 buccal 样本，而同一 GEO 系列中的牙周炎样本（如 GSM5005058）另有 accession；论文分析实际输入仍待核对。页面记录论文所述 CASP3/TXN/IL1B 与 OSscore，但未提取或伪造数值。下载的教学性氧化压力场景可通过单细胞实验室的现有场景导入器载入，不会成为默认值，也不是对公开数据的复现。可运行 `python scripts/run_data_inspired_hypothesis.py` 导出 24 小时教学轨迹（默认写入 `outputs/data_inspired_hypothesis/`）；CSV 每行附模型版本、来源链接、未校准状态和解释边界。本地分析结果未提供，后续可用 [空白映射模板](data/hypothesis_mapping_template.json)按来源记录。详见 [DATA_TO_MODEL_HYPOTHESES.md](DATA_TO_MODEL_HYPOTHESES.md)。
+
 ## 可复现验证案例
 
 `data/a549_teaching_synthetic.csv` 是**教学合成数据**，并非真实实验数据或独立验证数据。它用于复跑“训练点粗校准—留出点评估—图形与指标导出”的软件流程，不能证明 A549 模型的生物学有效性。

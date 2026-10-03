@@ -217,6 +217,22 @@ class AppStateTestCase(unittest.TestCase):
         self.assertEqual(app.session_state["cell"].snapshot(), culture_snapshot)
         self.assertEqual(len(app.exception), 0)
 
+    def test_data_inspired_hypothesis_page_is_read_only_and_exportable(self) -> None:
+        app_path = Path(__file__).resolve().parents[1] / "app.py"
+        app = AppTest.from_file(app_path).run(timeout=30)
+        original_state = app.session_state["single_cell_state"].snapshot().copy()
+        original_environment = app.session_state["single_cell_environment"].snapshot().copy()
+        self._set_mode(app, "数据启发假设")
+
+        self.assertTrue(any("GSE164241" in item.value for item in app.markdown))
+        self.assertTrue(any("CASP3" in item.value and "OSscore" in item.value for item in app.markdown))
+        self.assertTrue(any("本地口腔单细胞项目的结果表未包含" in item.value for item in app.warning))
+        self.assertTrue(any("BM150" in item.value for item in app.warning))
+        self.assertTrue(any(item.label == "导出教学假设情景 JSON" for item in app.get("download_button")))
+        self.assertEqual(app.session_state["single_cell_state"].snapshot(), original_state)
+        self.assertEqual(app.session_state["single_cell_environment"].snapshot(), original_environment)
+        self.assertEqual(len(app.exception), 0)
+
     def test_context_bar_uses_mode_specific_time_and_calibration_status(self) -> None:
         app_path = Path(__file__).resolve().parents[1] / "app.py"
         app = AppTest.from_file(app_path).run(timeout=30)

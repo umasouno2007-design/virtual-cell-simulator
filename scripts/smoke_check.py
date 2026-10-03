@@ -1,7 +1,8 @@
-"""部署前无网页 smoke check：培养、单细胞、微群体与场景往返。"""
+"""部署前无网页 smoke check：培养、单细胞、微群体与数据启发场景往返。"""
 
 from pathlib import Path
 import sys
+from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -15,6 +16,7 @@ from cell_scenario import (
     import_single_cell_scenario,
     single_cell_history_row,
 )
+from data_model_hypotheses import export_hypothesis_scenario_json, load_hypothesis_scenario
 from experiment_manifest import build_manifest
 from intracellular import IntracellularState
 from intracellular_forecast import forecast_intracellular_state
@@ -22,6 +24,7 @@ from microcolony import MicrocolonyState
 from microenvironment import MicroenvironmentState
 from scenario import import_scenario
 from scripts.validate_a549_teaching_case import run_case
+from scripts.run_data_inspired_hypothesis import run_scenario as run_hypothesis_scenario
 from virtual_assays import simulate_virtual_assay
 
 
@@ -56,6 +59,19 @@ def main() -> None:
     assert example_scene.is_file()
     restored_example, _ = import_scenario(example_scene.read_text(encoding="utf-8"))
     assert restored_example.profile_key == "a549"
+
+    # 假设映射只读，不作参数拟合；下载场景须兼容既有单细胞导入器。
+    hypothesis = load_hypothesis_scenario()
+    assert hypothesis["evidence"]["model_mapping_grade"] == "C"
+    assert hypothesis["evidence"]["parameter_calibration"] == "none"
+    inspired_payload = export_hypothesis_scenario_json()
+    _, inspired_state, inspired_history, inspired_events = import_single_cell_scenario(inspired_payload)
+    assert inspired_history and inspired_events[0]["event_type"] == "oxidative_stress"
+    assert inspired_state.ros_percent > IntracellularState().ros_percent
+    with TemporaryDirectory() as output_dir:
+        hypothesis_json, hypothesis_csv = run_hypothesis_scenario(Path(output_dir))
+        assert hypothesis_json.is_file() and hypothesis_json.stat().st_size > 0
+        assert hypothesis_csv.is_file() and hypothesis_csv.stat().st_size > 0
 
     # 原培养动力学和实验清单仍可运行。
     culture = CellCulture("a549")

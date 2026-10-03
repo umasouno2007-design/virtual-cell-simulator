@@ -46,6 +46,7 @@ from virtual_assays import ASSAYS, simulate_virtual_assay
 from sensitivity import PENDING_MEASUREMENT_PARAMETERS, SENSITIVITY_PARAMETERS, run_sensitivity
 from state_reporting import intracellular_change_summary
 from data_quality import quality_report
+from data_model_hypotheses import load_hypothesis_scenario, export_hypothesis_scenario_json
 from scenario import export_scenario, import_scenario
 from version import MODEL_VERSION
 from profiles import CELL_PROFILES
@@ -892,7 +893,7 @@ def sidebar() -> None:
     st.sidebar.caption("全局视图与显示偏好")
     st.sidebar.radio(
         "模拟模式",
-        ["单细胞实验室", "微型细胞群", "培养环境与数据工作流"],
+        ["单细胞实验室", "微型细胞群", "培养环境与数据工作流", "数据启发假设"],
         key="app_mode",
         help="单细胞与微群体是教学性相对状态模型；培养模式保留经验动力学与数据工作流。",
     )
@@ -916,6 +917,12 @@ def render_experiment_context_bar(cell) -> None:
         data_kind = "代表性微型细胞群模拟轨迹"
         calibration = "不适用：异质性/通信为教学规则"
         quality = "不适用：当前未对齐微群体实测数据"
+    elif mode == "数据启发假设":
+        cell_line = "公开口腔组织数据参考；非细胞系模型"
+        time_h = 0.0
+        data_kind = "只读数据—模型假设映射"
+        calibration = "未校准：数据不用于拟合"
+        quality = "公开论文结果；非本地重分析"
     else:
         cell_line = cell.profile.display_name
         time_h = cell.time_h
@@ -3371,3 +3378,58 @@ elif st.session_state.app_mode == "单细胞实验室":
         observability_panel()
 elif st.session_state.app_mode == "微型细胞群":
     microcolony_lab()
+elif st.session_state.app_mode == "数据启发假设":
+    def render_data_inspired_hypotheses() -> None:
+        """只读呈现公开数据来源、谨慎映射及可下载的教学假设场景。"""
+
+        scenario = load_hypothesis_scenario()
+        st.subheader("公开数据启发的机制假设")
+        st.warning(
+            "本地口腔单细胞项目的结果表未包含在当前工作区。以下公开结果来自文献，"
+            "不得误认为本地项目分析；该页面只读，不会修改模型状态或参数。"
+        )
+        source = scenario["source_data"]
+        observed = scenario["observed_pattern"]
+        st.markdown("#### 数据来源与观察")
+        st.warning(f"来源核对：{source['provenance_conflict']}")
+        st.markdown(
+            f"{observed['reported_result']}\n\n"
+            f"论文报告的相关基因：{', '.join(observed['reported_genes'])}。\n\n"
+            f"通路评分：{observed['reported_score']}\n\n"
+            f"证据类型：{observed['evidence_type']}\n\n"
+            f"来源限制：{observed['caveat']}\n\n"
+            f"来源：[{source['paper']}]({source['paper_url']})；"
+            f"[GEO {source['dataset']}]({source['dataset_url']})；"
+            f"[健康样本 {source['single_cell_sample_reference']}]({source['sample_url']})；"
+            f"[病例样本 {source['disease_sample_reference']}]({source['disease_sample_url']})。"
+        )
+        st.markdown("#### 对 e-cell 的教学映射")
+        st.markdown(
+            f"**假设问题：** {scenario['teaching_hypothesis']['question']}\n\n"
+            f"**映射边界：** {scenario['teaching_hypothesis']['mapping_boundary']}\n\n"
+            f"**证据等级：** 公开观察为来源报告；数据到 e-cell 的映射为 "
+            f"{scenario['evidence']['model_mapping_grade']} 级教学规则。"
+        )
+        st.markdown("#### 可导出的假设情景（不自动应用）")
+        teaching = scenario["teaching_scenario"]
+        st.write(
+            f"单细胞实验室；现有教学性氧化压力脉冲，相对输入指数 "
+            f"{teaching['relative_input_index']:.1f}；建议以 {teaching['time_step_h']:g} h "
+            f"步长推进 {teaching['suggested_duration_h']:g} h。此值沿用软件按钮的教学设定，"
+            "不是表达数据换算值、实验剂量或拟合参数。"
+        )
+        st.caption(teaching["input_interpretation"])
+        with st.expander("哪些内容没有由公开数据校准", expanded=True):
+            st.markdown("**未校准参数**\n" + "\n".join(f"- {item}" for item in scenario["not_calibrated"]))
+            st.markdown("**不能从表达数据推出**\n" + "\n".join(f"- {item}" for item in scenario["not_inferable"]))
+            st.markdown("**限制**\n" + "\n".join(f"- {item}" for item in scenario["limitations"]))
+        st.download_button(
+            "导出教学假设情景 JSON",
+            data=export_hypothesis_scenario_json().encode("utf-8"),
+            file_name="oral_periodontitis_oxidative_stress_teaching_hypothesis.json",
+            mime="application/json",
+            key="download_data_inspired_hypothesis",
+        )
+        st.caption("JSON 可在单细胞实验室通过场景导入器载入；包含来源说明扩展字段，不含原始转录组数据，不会被设为默认场景。")
+
+    render_data_inspired_hypotheses()
