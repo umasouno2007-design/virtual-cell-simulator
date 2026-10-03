@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from math import isfinite
+from math import ceil, isfinite, sqrt
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -147,8 +147,10 @@ def representative_subpopulation_points(
     release = {"稳态/适应": 8.0, "应激": 55.0, "受损": 88.0}
     fate = {"稳态/适应": 12.0, "应激": 45.0, "受损": 82.0}
     points: list[dict[str, float | str]] = []
+    columns = 6 if total_points <= 36 else ceil(sqrt(total_points))
+    rows = ceil(total_points / columns)
     for index, group in enumerate(groups):
-        row, column = divmod(index, 6)
+        row, column = divmod(index, columns)
         if view == "信号释放":
             value = release[group]
         elif view == "接收端响应":
@@ -158,7 +160,11 @@ def representative_subpopulation_points(
         else:
             value = {"稳态/适应": 1.0, "应激": 2.0, "受损": 3.0}[group]
         points.append({
-            "x": float(column + 0.35 * (row % 2)), "y": float(5 - row),
+            "x": float(
+                column + 0.35 * (row % 2)
+                if total_points <= 36 else 5.0 * column / max(1, columns - 1)
+            ),
+            "y": float(5 - row if total_points <= 36 else 5.0 * (1 - row / max(1, rows - 1))),
             "group": group, "value": float(value), "color": colors[group], "marker": markers[group],
         })
     return points

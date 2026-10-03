@@ -5,6 +5,13 @@
   "data_source": "data/a549_teaching_synthetic.csv",
   "data_file_sha256": "b6faa825617102a991a70fa5a65d4f65902564b5e2fd5fdf9c0e04b853ef3112",
   "quality_warnings": [],
+  "initial_conditions": {
+    "source": "observed 0 h (unverified for user files)",
+    "time_h": 0.0,
+    "viable_cells": 250000.0,
+    "glucose_mM": 10.0,
+    "lactate_mM": 0.0
+  },
   "training_time_h": [
     0.0,
     12.0,

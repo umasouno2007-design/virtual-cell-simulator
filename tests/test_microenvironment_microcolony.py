@@ -11,6 +11,15 @@ from microenvironment import MicroenvironmentState
 
 
 class MicroenvironmentAndMicrocolonyTests(unittest.TestCase):
+    def test_unknown_selected_cell_cannot_silently_show_first_cell(self) -> None:
+        colony = MicrocolonyState(cell_count=3)
+        for invalid in (0, 4, True, "1"):
+            with self.subTest(cell_id=invalid):
+                with self.assertRaisesRegex(ValueError, "编号不在当前微群体"):
+                    colony.selected_snapshot(invalid)
+                with self.assertRaisesRegex(ValueError, "编号不在当前微群体"):
+                    colony.selected_history(invalid)
+
     def test_single_cell_runs_without_cell_culture(self) -> None:
         environment = MicroenvironmentState(local_oxygen_availability=0.35, glucose_mm=2.0, ph=7.1)
         state = IntracellularState()
@@ -19,14 +28,30 @@ class MicroenvironmentAndMicrocolonyTests(unittest.TestCase):
         self.assertGreaterEqual(state.atp_percent, 0.0)
         self.assertLessEqual(state.atp_percent, 100.0)
 
-    def test_non_finite_time_step_is_ignored_and_environment_is_sanitized(self) -> None:
+    def test_non_finite_time_step_is_rejected_and_environment_is_sanitized(self) -> None:
         state = IntracellularState()
         before = state.snapshot()
-        state.step(MicroenvironmentState(), math.nan)
+        with self.assertRaisesRegex(ValueError, "单细胞单步时长"):
+            state.step(MicroenvironmentState(), math.nan)
         self.assertEqual(state.snapshot(), before)
         environment = MicroenvironmentState(time_h=math.inf, glucose_mm=math.nan).normalized()
         self.assertTrue(math.isfinite(environment.time_h))
         self.assertTrue(math.isfinite(environment.glucose_mm))
+
+    def test_invalid_single_and_colony_steps_do_not_silently_return(self) -> None:
+        environment = MicroenvironmentState()
+        state = IntracellularState()
+        colony = MicrocolonyState(cell_count=3)
+        for invalid in (-1.0, math.nan, math.inf, None, True):
+            with self.subTest(dt_h=invalid):
+                with self.assertRaisesRegex(ValueError, "单细胞单步时长"):
+                    state.step(environment, invalid)
+                with self.assertRaisesRegex(ValueError, "微群体单步时长"):
+                    colony.step(environment, invalid)
+        state.step(environment, 0.0)
+        colony.step(environment, 0.0)
+        self.assertEqual(state.time_h, 0.0)
+        self.assertEqual(colony.time_h, 0.0)
 
     def test_culture_derived_environment_matches_direct_schema(self) -> None:
         culture = CellCulture("a549")

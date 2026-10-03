@@ -95,6 +95,12 @@ class CellCommunicationTests(unittest.TestCase):
         self.assertEqual(len(points), 36)
         self.assertEqual({point["group"] for point in points}, {"稳态/适应", "应激", "受损"})
 
+    def test_larger_teaching_map_keeps_all_points_inside_plot_bounds(self) -> None:
+        points = representative_subpopulation_points(CellCommunicationState(), total_points=100)
+        self.assertEqual(len(points), 100)
+        self.assertTrue(all(0.0 <= point["x"] <= 6.3 for point in points))
+        self.assertTrue(all(0.0 <= point["y"] <= 5.7 for point in points))
+
 
 if __name__ == "__main__":
     unittest.main()

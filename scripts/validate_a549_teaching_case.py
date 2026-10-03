@@ -39,6 +39,27 @@ def _summarize(comparison: pd.DataFrame) -> list[dict]:
     return summary.to_dict(orient="records")
 
 
+def _template_from_observed_start(observations: pd.DataFrame) -> tuple[CellCulture, dict]:
+    """Use declared t=0 observations as the replay start, never an unrelated default."""
+
+    start = observations.loc[observations["time_h"] == 0.0]
+    if len(start) != 1:
+        raise ValueError("案例要求恰好一个 0 h 初始观测点，以核对拟合起点。")
+    row = start.iloc[0]
+    if pd.isna(row["viable_cells"]) or pd.isna(row["glucose_mM"]):
+        raise ValueError("0 h 观测必须包含活细胞数和葡萄糖，不能用模型默认值填补。")
+    viable = float(row["viable_cells"])
+    if viable <= 0:
+        raise ValueError("0 h 活细胞数必须大于 0，才能从该起点重演培养动力学。")
+    template = CellCulture("a549", viable_cells=viable)
+    template.glucose_mm = float(row["glucose_mM"])
+    initial = {"time_h": 0.0, "viable_cells": viable, "glucose_mM": template.glucose_mm}
+    if "lactate_mM" in observations and pd.notna(row["lactate_mM"]):
+        template.lactate_mm = float(row["lactate_mM"])
+        initial["lactate_mM"] = template.lactate_mm
+    return template, initial
+
+
 def run_case(data_path: Path = DEFAULT_DATA, output_dir: Path | None = None) -> dict:
     """拟合训练点并对留出点报告误差，返回 JSON 可序列化结果。"""
 
@@ -62,7 +83,7 @@ def run_case(data_path: Path = DEFAULT_DATA, output_dir: Path | None = None) -> 
     if len(training) != len(TRAIN_TIMES) or len(validation) != len(VALIDATION_TIMES):
         raise ValueError("训练/验证时间点不完整；请使用未修改的教学数据文件。")
 
-    template = CellCulture("a549")
+    template, initial_conditions = _template_from_observed_start(observations)
     initial_history = [template.snapshot()]
     fitted = fit_growth_and_uptake(template, initial_history, training)
     _, predicted_history = replay_from_initial(
@@ -82,6 +103,7 @@ def run_case(data_path: Path = DEFAULT_DATA, output_dir: Path | None = None) -> 
         "data_source": "data/a549_teaching_synthetic.csv" if bundled_example else "user-supplied CSV (path withheld)",
         "data_file_sha256": fingerprint,
         "quality_warnings": [issue for issue, _ in quality["warnings"]],
+        "initial_conditions": {"source": "observed 0 h (unverified for user files)", **initial_conditions},
         "training_time_h": list(TRAIN_TIMES),
         "validation_time_h": list(VALIDATION_TIMES),
         "fitted_parameters": {

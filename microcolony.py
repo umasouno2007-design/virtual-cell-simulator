@@ -100,14 +100,18 @@ class MicrocolonyState:
 
         if not self.finite():
             raise ValueError("微型细胞群包含越界或非有限状态；请重置或重新载入有效场景。")
+        if isinstance(dt_h, bool):
+            raise ValueError("微群体单步时长必须是 0–6 h 内的有限数值。")
         try:
             dt_h = float(dt_h)
         except (TypeError, ValueError):
-            return
-        if not isfinite(dt_h) or dt_h <= 0:
-            return
+            raise ValueError("微群体单步时长必须是 0–6 h 内的有限数值。") from None
+        if not isfinite(dt_h) or dt_h < 0.0:
+            raise ValueError("微群体单步时长必须是 0–6 h 内的有限数值。")
         if dt_h > 6.0:
             raise ValueError("微群体单步时长不能超过 6 h；请分步推进。")
+        if dt_h == 0.0:
+            return
         environment = environment.normalized()
         releases = [self._release(cell) for cell in self.cells]
         signals: list[float] = []
@@ -166,13 +170,21 @@ class MicrocolonyState:
     def selected_history(self, cell_id: int) -> list[dict]:
         """返回指定代表性细胞的历史状态。"""
 
-        return [row for row in self.history if int(row.get("cell_id", -1)) == int(cell_id)]
+        self._require_cell(cell_id)
+        return [row for row in self.history if int(row.get("cell_id", -1)) == cell_id]
 
     def selected_snapshot(self, cell_id: int) -> dict[str, float | str]:
-        cell = next((item for item in self.cells if item.cell_id == cell_id), self.cells[0])
+        cell = self._require_cell(cell_id)
         payload = cell.state.snapshot()
         payload.update({"cell_id": cell.cell_id, "x": cell.x, "y": cell.y, "local_signal_index": cell.local_signal_index, "subgroup": cell.label()})
         return payload
+
+    def _require_cell(self, cell_id: int) -> RepresentativeCell:
+        if type(cell_id) is int:
+            cell = next((item for item in self.cells if item.cell_id == cell_id), None)
+            if cell is not None:
+                return cell
+        raise ValueError("所选代表性细胞编号不在当前微群体中。")
 
     def summary(self) -> dict[str, float]:
         values = [cell.state for cell in self.cells]

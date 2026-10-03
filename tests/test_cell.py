@@ -211,6 +211,15 @@ class CellCultureTestCase(unittest.TestCase):
         modifiers = cell.growth_modifiers()
         self.assertTrue(all(0 <= value <= 1 for value in modifiers.values()))
 
+    def test_direct_growth_modifiers_do_not_propagate_nonfinite_environment(self) -> None:
+        cell = CellCulture("hela")
+        cell.ph = float("nan")
+        cell.temperature_c = float("inf")
+        cell.osmolality_mosm_kg = float("nan")
+        cell.viable_cells = float("inf")
+        modifiers = cell.growth_modifiers()
+        self.assertTrue(all(math.isfinite(value) and 0 <= value <= 1 for value in modifiers.values()))
+
 
 if __name__ == "__main__":
     unittest.main()

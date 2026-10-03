@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import asdict
 from datetime import datetime, timezone
-from math import isfinite
+from math import isclose, isfinite
 from typing import Any
 
 from intracellular import IntracellularState
@@ -144,6 +144,7 @@ def import_single_cell_scenario(payload: bytes | str | dict) -> tuple[Microenvir
         history = _validate_rows(data.get("history", []), maximum=25_000)
         if history:
             _validate_single_history(history, state)
+            _validate_state_row(history[-1], state, "单细胞历史末点")
         starts_at_zero = bool(history) and abs(float(history[0]["time_h"])) <= 1e-9
         _validate_history_window_metadata(
             data, history, starts_at_zero,
@@ -285,6 +286,12 @@ def import_microcolony_scenario(payload: bytes | str | dict) -> tuple[Microcolon
         history = _validate_rows(data.get("history", []), maximum=25_000)
         if history:
             _validate_colony_history(history, seen_ids, time_h)
+            latest_by_cell = {int(row["cell_id"]): row for row in history}
+            for cell in cells:
+                latest = latest_by_cell[cell.cell_id]
+                _validate_state_row(latest, cell.state, f"代表性细胞 {cell.cell_id} 历史末点")
+                if not isclose(float(latest["local_signal_index"]), cell.local_signal_index, rel_tol=1e-9, abs_tol=1e-6):
+                    raise ValueError(f"代表性细胞 {cell.cell_id} 历史末点与当前局部信号不一致。")
         initial_cell_ids = {
             int(row["cell_id"]) for row in history
             if abs(float(row["time_h"])) <= 1e-9
@@ -324,8 +331,17 @@ def _check_common(data: dict, schema: str) -> None:
             f"场景模型版本为 v{model_version}，当前为 v{MODEL_VERSION}；"
             "为避免将旧状态按新规则继续推进，请使用相同模型版本导入。"
         )
-    if not data.get("created_at"):
-        raise ValueError("场景缺少 created_at。")
+    if not isinstance(data.get("created_at"), str) or not data["created_at"].strip():
+        raise ValueError("场景 created_at 必须是非空文本。")
+    evidence = data.get("evidence_level")
+    if not isinstance(evidence, dict) or not evidence or any(
+        not isinstance(key, str) or not key.strip()
+        or not isinstance(value, str) or value not in {"A", "B", "C"}
+        for key, value in evidence.items()
+    ):
+        raise ValueError("场景 evidence_level 必须包含 A/B/C 证据等级条目。")
+    if not isinstance(data.get("limitations"), str) or not data["limitations"].strip():
+        raise ValueError("场景 limitations 必须是非空文本。")
 
 
 def _finite(value: Any, name: str) -> float:
@@ -426,6 +442,21 @@ def _state_from_mapping(values: dict) -> IntracellularState:
     if state.cycle_phase not in {"G1", "S", "G2", "M"}:
         raise ValueError("未知细胞周期阶段。")
     return state
+
+
+def _validate_state_row(row: dict, state: IntracellularState, label: str) -> None:
+    """Ensure a saved trajectory ends at the exact state used for continuation."""
+
+    for name, expected in state.snapshot().items():
+        if name not in row:
+            raise ValueError(f"{label}缺少 {name}。")
+        actual = row[name]
+        if isinstance(expected, str):
+            same = actual == expected
+        else:
+            same = isclose(_finite(actual, f"{label}.{name}"), float(expected), rel_tol=1e-9, abs_tol=1e-6)
+        if not same:
+            raise ValueError(f"{label}与当前状态不一致：{name}。")
 
 
 def _environment_from_mapping(values: dict) -> MicroenvironmentState:
@@ -569,6 +600,9 @@ def _validate_colony_history(rows: list[dict], cell_ids: set[int], final_time: f
         layout_y = _finite(row.get("layout_y"), "history.layout_y")
         if not 0 <= layout_x <= 7 or not 0 <= layout_y <= 6:
             raise ValueError("微群体历史排版坐标超出范围。")
+        local_signal = _finite(row.get("local_signal_index"), "history.local_signal_index")
+        if not 0 <= local_signal <= 100:
+            raise ValueError("微群体历史局部信号超出 0–100。")
         for key in _HISTORY_INDEX_FIELDS:
             value = _finite(row.get(key), f"history.{key}")
             if not 0 <= value <= 100:

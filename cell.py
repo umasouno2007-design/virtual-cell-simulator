@@ -123,6 +123,10 @@ class CellCulture:
         glucose_mm = _finite_nonnegative(self.glucose_mm)
         glutamine_mm = _finite_nonnegative(self.glutamine_mm)
         oxygen_percent = _finite_nonnegative(self.oxygen_percent)
+        ph_value = _finite_nonnegative(self.ph, 7.4)
+        temperature_c = _finite_nonnegative(self.temperature_c, self.profile.temperature_c)
+        osmolality = _finite_nonnegative(self.osmolality_mosm_kg, 300.0)
+        viable_cells = _finite_nonnegative(self.viable_cells)
         glucose_half = max(1e-9, _finite_nonnegative(p.glucose_half_saturation_mm, 1e-9))
         glutamine_half = max(1e-9, _finite_nonnegative(p.glutamine_half_saturation_mm, 1e-9))
         oxygen_half = max(1e-9, _finite_nonnegative(p.oxygen_half_saturation_percent, 1e-9))
@@ -130,9 +134,9 @@ class CellCulture:
         glucose = glucose_mm / (glucose_half + glucose_mm)
         glutamine = glutamine_mm / (glutamine_half + glutamine_mm)
         oxygen = oxygen_percent / (oxygen_half + oxygen_percent)
-        ph = exp(-((self.ph - 7.35) / 0.38) ** 2)
-        temperature = exp(-((self.temperature_c - 37.0) / 2.0) ** 2)
-        osmolality = exp(-((self.osmolality_mosm_kg - 300.0) / 55.0) ** 2)
+        ph = exp(-((ph_value - 7.35) / 0.38) ** 2)
+        temperature = exp(-((temperature_c - 37.0) / 2.0) ** 2)
+        osmolality = exp(-((osmolality - 300.0) / 55.0) ** 2)
         lactate = 1.0 / (
             1.0 + (_finite_nonnegative(self.lactate_mm) / lactate_inhibition) ** 2
         )
@@ -143,7 +147,7 @@ class CellCulture:
         else:
             reciprocal = drug_ratio ** (-p.drug_hill)
             drug = reciprocal / (1.0 + reciprocal)
-        contact = max(0.0, 1.0 - self.viable_cells / self.carrying_capacity)
+        contact = max(0.0, 1.0 - viable_cells / self.carrying_capacity)
         return {
             "glucose": glucose,
             "glutamine": glutamine,

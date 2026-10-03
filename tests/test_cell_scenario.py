@@ -19,6 +19,21 @@ from microenvironment import MicroenvironmentState
 
 
 class CellScenarioTests(unittest.TestCase):
+    def test_single_and_colony_traceability_metadata_has_valid_types(self):
+        payloads = (
+            (export_single_cell_scenario(MicroenvironmentState(), IntracellularState(), [], []), import_single_cell_scenario),
+            (export_microcolony_scenario(MicrocolonyState(cell_count=3), MicroenvironmentState()), import_microcolony_scenario),
+        )
+        for original, importer in payloads:
+            for field, bad in (("created_at", []), ("evidence_level", {"rule": "verified"}),
+                               ("evidence_level", {"rule": []}),
+                               ("limitations", None)):
+                with self.subTest(schema=original["schema"], field=field):
+                    payload = copy.deepcopy(original)
+                    payload[field] = bad
+                    with self.assertRaisesRegex(ValueError, field):
+                        importer(payload)
+
     def test_environment_change_event_contains_only_changed_fields(self):
         environment = MicroenvironmentState(glucose_mm=2.0)
         original = environment.snapshot()
@@ -130,6 +145,18 @@ class CellScenarioTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "当前微环境时间与单细胞状态时间不一致"):
             import_single_cell_scenario(payload)
 
+    def test_single_cell_history_endpoint_must_match_continuation_state(self):
+        state = IntracellularState()
+        environment = MicroenvironmentState()
+        payload = export_single_cell_scenario(
+            environment, state, [single_cell_history_row(state, environment)], [],
+        )
+        payload["history"][-1]["ATP_percent"] -= 1.0
+        payload["initial_state"] = payload["history"][0]
+        payload["first_recorded_state"] = payload["history"][0]
+        with self.assertRaisesRegex(ValueError, "历史末点与当前状态不一致"):
+            import_single_cell_scenario(payload)
+
     def test_single_cell_round_trip_preserves_current_state_history_and_events(self):
         environment = MicroenvironmentState(glucose_mm=3.2, local_oxygen_availability=0.4)
         state = IntracellularState()
@@ -209,6 +236,20 @@ class CellScenarioTests(unittest.TestCase):
         payload = export_microcolony_scenario(colony, environment)
         payload["history"][-1]["communication_enabled"] = "on"
         with self.assertRaisesRegex(ValueError, "通信开关必须是布尔值"):
+            import_microcolony_scenario(payload)
+
+    def test_microcolony_each_history_endpoint_matches_current_cell(self):
+        colony = MicrocolonyState(cell_count=3, communication_enabled=True)
+        environment = MicroenvironmentState()
+        colony.step(environment, 1.0)
+        payload = export_microcolony_scenario(colony, environment)
+        payload["history"][-1]["ROS_percent"] += 1.0
+        with self.assertRaisesRegex(ValueError, "历史末点与当前状态不一致"):
+            import_microcolony_scenario(payload)
+
+        payload = export_microcolony_scenario(colony, environment)
+        payload["history"][-1]["local_signal_index"] = 100.0
+        with self.assertRaisesRegex(ValueError, "当前局部信号不一致"):
             import_microcolony_scenario(payload)
 
     def test_runtime_history_truncation_recalculates_window_metadata_and_remains_importable(self):

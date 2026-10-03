@@ -67,14 +67,18 @@ class IntracellularState:
         但当前没有被单细胞状态方程直接使用；其酸碱影响需通过独立 pH 输入表达。
         """
 
+        if isinstance(dt_h, bool):
+            raise ValueError("单细胞单步时长必须是 0–6 h 内的有限数值。")
         try:
             dt_h = float(dt_h)
         except (TypeError, ValueError):
-            return
-        if not isfinite(dt_h) or dt_h <= 0:
-            return
+            raise ValueError("单细胞单步时长必须是 0–6 h 内的有限数值。") from None
+        if not isfinite(dt_h) or dt_h < 0.0:
+            raise ValueError("单细胞单步时长必须是 0–6 h 内的有限数值。")
         if dt_h > 6.0:
             raise ValueError("单细胞单步时长不能超过 6 h；请分步推进。")
+        if dt_h == 0.0:
+            return
         # 兼容旧调用：现有培养工作流继续传入 CellCulture；新单细胞/微群体只传入环境。
         microenvironment = (
             environment if isinstance(environment, MicroenvironmentState)

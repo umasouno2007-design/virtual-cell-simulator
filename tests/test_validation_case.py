@@ -7,7 +7,10 @@ from tempfile import TemporaryDirectory
 import subprocess
 import sys
 
-from scripts.validate_a549_teaching_case import DEFAULT_DATA, run_case
+from scripts.validate_a549_teaching_case import (
+    DEFAULT_DATA, _template_from_observed_start, run_case,
+)
+import pandas as pd
 from version import MODEL_VERSION
 
 
@@ -19,6 +22,7 @@ class ValidationCaseTestCase(unittest.TestCase):
         self.assertEqual(result["model_version"], MODEL_VERSION)
         self.assertEqual(result["data_source"], "data/a549_teaching_synthetic.csv")
         self.assertEqual(len(result["data_file_sha256"]), 64)
+        self.assertEqual(result["initial_conditions"]["viable_cells"], 250000.0)
         committed_summary = json.loads(
             (DEFAULT_DATA.parents[1] / "assets" / "validation" / "a549_teaching_case" / "summary.json").read_text(encoding="utf-8")
         )
@@ -66,6 +70,22 @@ class ValidationCaseTestCase(unittest.TestCase):
             completed = subprocess.run(command, capture_output=True, text=True, check=False)
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("必须显式指定 --output-dir", completed.stderr)
+
+    def test_custom_initial_observation_sets_replay_start(self) -> None:
+        observations = pd.DataFrame({
+            "time_h": [0.0, 12.0],
+            "viable_cells": [500000.0, 600000.0],
+            "glucose_mM": [7.0, 6.5],
+            "lactate_mM": [1.0, 1.5],
+        })
+        template, initial = _template_from_observed_start(observations)
+        self.assertEqual(template.viable_cells, 500000.0)
+        self.assertEqual(template.glucose_mm, 7.0)
+        self.assertEqual(template.lactate_mm, 1.0)
+        self.assertEqual(initial["viable_cells"], 500000.0)
+        observations.loc[0, "viable_cells"] = None
+        with self.assertRaisesRegex(ValueError, "0 h 观测必须包含"):
+            _template_from_observed_start(observations)
 
 
 if __name__ == "__main__":

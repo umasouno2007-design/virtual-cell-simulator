@@ -1,6 +1,6 @@
 # 部署 e-cell
 
-e-cell 是面向贴壁细胞培养条件探索的 Streamlit 研究原型。部署不会把它变成经验证的实验或临床软件；公开部署前应保留 README 中的科学边界、数据隐私与证据等级说明。
+e-cell 是以代表性单细胞状态和教学性微型细胞群为入口、以贴壁细胞培养动力学与数据工作流为支撑的 Streamlit 研究原型。部署不会把它变成经验证的实验或临床软件；公开部署前应保留 README 中的科学边界、数据隐私与证据等级说明。
 
 ## 本地运行
 
@@ -42,6 +42,7 @@ streamlit run app.py
 ## 部署前检查
 
 ```bash
+python -m pip check
 python -m unittest discover -s tests -p "test_*.py"
 python scripts/validate_a549_teaching_case.py
 python scripts/smoke_check.py
