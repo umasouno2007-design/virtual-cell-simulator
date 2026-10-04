@@ -5,6 +5,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 
 from cell import CellCulture
+from version import MODEL_VERSION
 
 
 def build_manifest(
@@ -25,6 +26,7 @@ def build_manifest(
         "schema": "e-cell-experiment-manifest/v1",
         "exported_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "app_version": app_version,
+        "model_version": MODEL_VERSION,
         "experiment": {
             "profile_key": cell.profile_key,
             "preset_name": preset_name,

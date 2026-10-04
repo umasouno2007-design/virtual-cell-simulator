@@ -4,6 +4,7 @@ import unittest
 
 from cell import CellCulture
 from experiment_manifest import build_manifest
+from version import MODEL_VERSION
 
 
 class ExperimentManifestTestCase(unittest.TestCase):
@@ -16,6 +17,7 @@ class ExperimentManifestTestCase(unittest.TestCase):
             experiment_metadata={"passage_number": "P12", "mycoplasma_status": "阴性"},
         )
         self.assertEqual(manifest["schema"], "e-cell-experiment-manifest/v1")
+        self.assertEqual(manifest["model_version"], MODEL_VERSION)
         self.assertEqual(manifest["experiment"]["profile_key"], "hela")
         self.assertIn("growth_scale", manifest["parameters"])
         self.assertEqual(manifest["history_summary"]["point_count"], 1)
