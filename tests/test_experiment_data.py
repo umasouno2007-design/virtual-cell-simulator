@@ -190,6 +190,14 @@ class ExperimentDataTestCase(unittest.TestCase):
         )
         self.assertEqual(aligned.loc[0, "viable_cells_simulated"], 200.0)
 
+    def test_comparison_rejects_unparseable_or_nonfinite_measurements(self) -> None:
+        simulation = pd.DataFrame({"time_h": [0.0, 24.0], "viable_cells": [100.0, 200.0]})
+        for values, message in (([100.0, "unknown"], "无法解析"), ([100.0, float("inf")], "非有限")):
+            with self.subTest(values=values):
+                observed = pd.DataFrame({"time_h": [0.0, 24.0], "viable_cells": values})
+                with self.assertRaisesRegex(ValueError, message):
+                    comparison_frame(simulation, observed)
+
     def test_comparison_does_not_extrapolate_beyond_simulation_history(self) -> None:
         simulation = pd.DataFrame({"time_h": [0.0, 24.0], "viable_cells": [100.0, 200.0]})
         observed = pd.DataFrame({"time_h": [12.0, 48.0], "viable_cells": [140.0, 300.0]})
