@@ -48,6 +48,14 @@ class MicroenvironmentAndMicrocolonyTests(unittest.TestCase):
         self.assertEqual(clean.glucose_mm, 0.0)
         self.assertEqual(clean.ph, 9.0)
 
+    def test_unrepresentably_large_environment_integers_use_safe_lower_bounds(self) -> None:
+        environment = MicroenvironmentState(time_h=10**10000, glucose_mm=10**10000)
+        clean = environment.normalized_copy()
+        self.assertEqual(clean.time_h, 0.0)
+        self.assertEqual(clean.glucose_mm, 0.0)
+        self.assertEqual(environment.time_h, 10**10000)
+        self.assertEqual(environment.glucose_mm, 10**10000)
+
     def test_boolean_environment_values_are_rejected_without_partial_normalization(self) -> None:
         numeric_fields = (
             "time_h", "local_oxygen_availability", "glucose_mm",

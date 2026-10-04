@@ -16,7 +16,7 @@ def _bounded(value: float, low: float, high: float) -> float:
     try:
         numeric = float(value)
         return max(low, min(high, numeric)) if isfinite(numeric) else low
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return low
 
 
@@ -50,7 +50,7 @@ class MicroenvironmentState:
 
         try:
             time_h = float(self.time_h)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             time_h = 0.0
         self.time_h = max(0.0, time_h) if isfinite(time_h) else 0.0
         self.local_oxygen_availability = _bounded(self.local_oxygen_availability, 0.0, 1.0)
