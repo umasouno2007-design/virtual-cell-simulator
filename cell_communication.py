@@ -222,7 +222,15 @@ def representative_subpopulation_points(
         not isinstance(intracellular, IntracellularState) or not intracellular.finite()
     ):
         raise ValueError("命运倾向视图必须提供有效的当前代表性细胞状态。")
-    total_points = max(9, min(int(total_points), 100))
+    if is_boolean_scalar(total_points):
+        raise ValueError("子群示意点数必须是 9–100 范围内的有限整数。")
+    try:
+        requested_points = float(total_points)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("子群示意点数必须是 9–100 范围内的有限整数。") from None
+    if not isfinite(requested_points) or not requested_points.is_integer():
+        raise ValueError("子群示意点数必须是 9–100 范围内的有限整数。")
+    total_points = max(9, min(int(requested_points), 100))
     injured_count = min(total_points, round(total_points * state.injured_fraction / 100.0))
     stressed_count = min(total_points - injured_count, round(total_points * state.stressed_fraction / 100.0))
     resilient_count = total_points - injured_count - stressed_count

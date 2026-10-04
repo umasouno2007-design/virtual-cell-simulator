@@ -237,6 +237,12 @@ class CellCommunicationTests(unittest.TestCase):
             representative_subpopulation_points(
                 CellCommunicationState(), "命运倾向", intracellular="invalid",
             )
+        for point_count in (True, float("nan"), float("inf"), 9.5, 10**10000, []):
+            with self.subTest(total_points=type(point_count).__name__):
+                with self.assertRaisesRegex(ValueError, "示意点数"):
+                    representative_subpopulation_points(
+                        CellCommunicationState(), total_points=point_count,
+                    )
 
     def test_larger_teaching_map_keeps_all_points_inside_plot_bounds(self) -> None:
         points = representative_subpopulation_points(CellCommunicationState(), total_points=100)
