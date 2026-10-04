@@ -320,7 +320,11 @@ class CellCulture:
             value = getattr(self.parameters, field.name)
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise ValueError(f"模型参数 {field.name} 必须是有限数值。")
-            if not isfinite(value):
+            try:
+                finite = isfinite(value)
+            except OverflowError:
+                finite = False
+            if not finite:
                 raise ValueError(f"模型参数 {field.name} 必须是有限数值。")
             if (field.name in nonnegative and value < 0) or (field.name in positive and value <= 0):
                 raise ValueError(f"模型参数 {field.name} 的符号或零值不符合当前方程要求。")

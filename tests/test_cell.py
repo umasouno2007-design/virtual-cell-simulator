@@ -218,6 +218,14 @@ class CellCultureTestCase(unittest.TestCase):
                     cell.step(1.0)
                 self.assertEqual(cell.time_h, 0.0)
 
+    def test_unrepresentably_large_integer_parameter_is_rejected_atomically(self) -> None:
+        cell = CellCulture("a549")
+        cell.parameters.growth_scale = 10**10000
+        before = cell.snapshot()
+        with self.assertRaisesRegex(ValueError, "growth_scale"):
+            cell.step(0.25)
+        self.assertEqual(cell.snapshot(), before)
+
     def test_every_model_parameter_rejects_invalid_types_and_nonfinite_values_atomically(self) -> None:
         for model_field in fields(ModelParameters):
             for invalid in (True, float("nan"), float("inf"), "invalid"):
