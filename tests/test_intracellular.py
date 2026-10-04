@@ -1,9 +1,12 @@
 """细胞内部状态与培养环境耦合的回归测试。"""
 
 import unittest
+from itertools import product
+from math import isfinite
 
 from cell import CellCulture
 from intracellular import IntracellularState, intracellular_status
+from microenvironment import MicroenvironmentState
 
 
 class IntracellularStateTestCase(unittest.TestCase):
@@ -86,6 +89,40 @@ class IntracellularStateTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "单步时长不能超过 6 h"):
             state.step(CellCulture("hela"), 24.0)
         self.assertEqual(state.time_h, 0.0)
+
+    def test_relative_indices_remain_bounded_at_environment_endpoints(self) -> None:
+        index_fields = (
+            "atp_percent", "mitochondrial_potential_percent", "glycolysis_percent",
+            "ros_percent", "dna_damage_percent", "er_stress_percent",
+            "autophagy_percent", "protein_synthesis_percent", "growth_signal_percent",
+            "apoptosis_signal_percent", "cycle_progress_percent",
+        )
+        endpoints = product(
+            (0.0, 1.0), (0.0, 100.0), (5.5, 9.0),
+            (0.0, 50.0), (0.0, 1e6), (0.0, 100.0),
+        )
+        for oxygen, glucose, ph, temperature, drug, confluence in endpoints:
+            with self.subTest(
+                oxygen=oxygen, glucose=glucose, ph=ph,
+                temperature=temperature, drug=drug, confluence=confluence,
+            ):
+                environment = MicroenvironmentState(
+                    local_oxygen_availability=oxygen,
+                    glucose_mm=glucose,
+                    glucose_reference_mm=100.0,
+                    ph=ph,
+                    temperature_c=temperature,
+                    drug_um=drug,
+                    drug_ic50_um=1e-6,
+                    doubling_time_h=1.0,
+                    local_confluence_percent=confluence,
+                )
+                state = IntracellularState()
+                for _ in range(10):
+                    state.step(environment, 6.0)
+                self.assertTrue(all(isfinite(float(getattr(state, field))) for field in index_fields))
+                self.assertTrue(all(0.0 <= float(getattr(state, field)) <= 100.0 for field in index_fields))
+                self.assertTrue(50.0 <= state.cytosolic_calcium_nm <= 1200.0)
 
     def test_status_reports_severe_apoptosis(self) -> None:
         state = IntracellularState(apoptosis_signal_percent=75.0)
