@@ -112,6 +112,31 @@ class CellCommunicationTests(unittest.TestCase):
         state.step(IntracellularState(), 0.0)
         self.assertEqual(state.snapshot(), before)
 
+    def test_zero_duration_still_validates_restored_states_and_feedback_switch(self) -> None:
+        valid_cell = IntracellularState()
+        invalid_cases = (
+            (CellCommunicationState(stress_signal_index=float("nan")), valid_cell, False,
+             "通信状态包含越界"),
+            (CellCommunicationState(), IntracellularState(ros_percent=float("nan")), False,
+             "通信层输入的单细胞状态无效"),
+            (CellCommunicationState(), valid_cell, "false", "通信反馈开关必须是布尔值"),
+        )
+        for communication, intracellular, feedback, message in invalid_cases:
+            with self.subTest(message=message):
+                before_communication = communication.snapshot()
+                before_intracellular = intracellular.snapshot()
+                with self.assertRaisesRegex(ValueError, message):
+                    communication.step(
+                        intracellular, 0.0, feedback_enabled=feedback,
+                    )
+                self.assertEqual(communication.snapshot(), before_communication)
+                for key, value in before_intracellular.items():
+                    actual = intracellular.snapshot()[key]
+                    if isinstance(value, float) and math.isnan(value):
+                        self.assertTrue(math.isnan(actual))
+                    else:
+                        self.assertEqual(actual, value)
+
     def test_invalid_saved_communication_state_is_rejected_without_mutation(self) -> None:
         invalid_states = (
             CellCommunicationState(resilient_fraction=90.0),

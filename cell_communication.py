@@ -114,14 +114,16 @@ class CellCommunicationState:
             raise ValueError("通信层时间步长必须是 0–24 h 内的有限数值。") from None
         if not isfinite(dt_h) or dt_h < 0.0 or dt_h > 24.0:
             raise ValueError("通信层时间步长必须是 0–24 h 内的有限数值。")
-        if dt_h == 0.0:
-            return
         if type(feedback_enabled) is not bool:
             raise ValueError("通信反馈开关必须是布尔值。")
         if not self.finite():
             raise ValueError("通信状态包含越界、非有限或不守恒数值；请重置或载入有效状态。")
         if not isinstance(intracellular, IntracellularState) or not intracellular.finite():
             raise ValueError("通信层输入的单细胞状态无效；请重置或载入有效状态。")
+        # A zero-duration call is still a validation boundary: callers often use it
+        # to normalize/check restored state before deciding whether to advance time.
+        if dt_h == 0.0:
+            return
         next_time_h = checked_time_advance(self.time_h, dt_h)
         if dt_h > MAX_INTERNAL_STEP_H:
             remaining_h = dt_h
