@@ -25,6 +25,14 @@ FIELD_LABELS = {
     "oxygen_percent": "氧（%）",
 }
 
+# State domains used by the current simulator. Direct API callers must receive
+# the same guard as the CSV quality workflow before values enter residuals.
+MODEL_STATE_BOUNDS = {
+    "viability_percent": (0.0, 100.0),
+    "oxygen_percent": (0.0, 21.0),
+    "pH": (6.2, 8.0),
+}
+
 _ALIASES = {
     "time_h": ("time_h", "time", "hour", "hours", "h", "时间", "时间h", "时间（h）", "时间(h)"),
     "viable_cells": ("viable_cells", "viable cell count", "live_cells", "cell_count", "活细胞数", "活细胞", "细胞数"),
@@ -217,6 +225,12 @@ def comparison_frame(simulation: pd.DataFrame, measurements: pd.DataFrame) -> pd
                 raise ValueError(f"{label}字段 {FIELD_LABELS[field]}包含非有限数值。")
             if (numeric_values.dropna() < 0).any():
                 raise ValueError(f"{label}字段 {FIELD_LABELS[field]}包含负值，不能用于模拟对齐。")
+            bounds = MODEL_STATE_BOUNDS.get(field)
+            if bounds is not None and ((numeric_values.dropna() < bounds[0]) | (numeric_values.dropna() > bounds[1])).any():
+                lower, upper = bounds
+                raise ValueError(
+                    f"{label}字段 {FIELD_LABELS[field]}超出当前模型状态范围 {lower:g}–{upper:g}，不能用于模拟对齐。"
+                )
             normalized[field] = numeric_values
         normalized_frames[label] = normalized
     simulation = normalized_frames["模拟"]

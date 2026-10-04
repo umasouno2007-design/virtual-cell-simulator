@@ -213,6 +213,22 @@ class ExperimentDataTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "模拟字段 活细胞数包含负值"):
             comparison_frame(invalid_simulation, valid_observed)
 
+    def test_comparison_rejects_values_outside_model_state_domains(self) -> None:
+        cases = (
+            ("viability_percent", [0.0, 60.0], 101.0, "存活率（%）超出当前模型状态范围 0–100"),
+            ("oxygen_percent", [0.0, 18.0], 22.0, "氧（%）超出当前模型状态范围 0–21"),
+            ("pH", [6.5, 7.4], 8.1, "pH超出当前模型状态范围 6.2–8"),
+        )
+        for field, in_range, out_of_range, message in cases:
+            with self.subTest(field=field):
+                valid = pd.DataFrame({"time_h": [0.0, 24.0], field: in_range})
+                invalid_observation = valid.assign(**{field: [in_range[0], out_of_range]})
+                with self.assertRaisesRegex(ValueError, message):
+                    comparison_frame(valid, invalid_observation)
+                invalid_simulation = valid.assign(**{field: [in_range[0], out_of_range]})
+                with self.assertRaisesRegex(ValueError, message.replace("实测字段", "模拟字段")):
+                    comparison_frame(invalid_simulation, valid)
+
     def test_comparison_turns_unrepresentably_large_python_integers_into_domain_errors(self) -> None:
         huge = 10**10000
         simulation = pd.DataFrame({
