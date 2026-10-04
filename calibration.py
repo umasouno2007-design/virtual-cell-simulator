@@ -278,6 +278,10 @@ def fit_with_temporal_holdout(
         raise ValueError("校准观测必须是已标准化的 Pandas 表格。")
     if "time_h" not in measurements:
         raise ValueError("实测数据缺少 time_h 列，无法划分训练与留出时间点。")
+    if measurements["time_h"].map(
+        lambda value: is_boolean_scalar(value) if pd.notna(value) else False
+    ).any():
+        raise ValueError("校准时间列不能包含布尔值；True/False 不能作为 1/0 小时使用。")
     times = pd.to_numeric(measurements["time_h"], errors="coerce")
     if times.isna().any() or not times.map(isfinite).all() or (times < 0).any():
         raise ValueError("时间列必须是有限非负小时数，才能划分训练与留出点。")

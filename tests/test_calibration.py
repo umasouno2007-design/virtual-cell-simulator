@@ -23,6 +23,15 @@ class CalibrationTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "校准观测"):
             fit_with_temporal_holdout(cell, [cell.snapshot()], None)
 
+    def test_temporal_holdout_rejects_boolean_time_before_numeric_conversion(self) -> None:
+        cell = CellCulture("hela")
+        measurements = pd.DataFrame({
+            "time_h": [0.0, 12.0, True, 36.0, 48.0],
+            "viable_cells": [100.0, 110.0, 120.0, 130.0, 140.0],
+        })
+        with self.assertRaisesRegex(ValueError, "校准时间列不能包含布尔值"):
+            fit_with_temporal_holdout(cell, [cell.snapshot()], measurements)
+
     def test_oversized_time_and_weight_inputs_are_rejected_before_search(self) -> None:
         cell = CellCulture("a549")
         initial = cell.snapshot()
