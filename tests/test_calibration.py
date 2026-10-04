@@ -1,6 +1,7 @@
 """两参数粗校准的回归测试。"""
 
 import unittest
+from itertools import count
 from math import isclose, isfinite
 
 import pandas as pd
@@ -67,6 +68,8 @@ class CalibrationTestCase(unittest.TestCase):
         huge = 10**10000
         with self.assertRaisesRegex(ValueError, "校准重演时间"):
             replay_from_initial(cell, initial, [huge], 1.0, 1.0)
+        with self.assertRaisesRegex(ValueError, "最多接受 5,000 个目标时间点"):
+            replay_from_initial(cell, initial, count(0), 1.0, 1.0)
         pandas_boolean = pd.Series([True]).iloc[0]
         for invalid_time in ([True], [pandas_boolean], "24"):
             with self.subTest(target_times=invalid_time):

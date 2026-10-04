@@ -1,6 +1,7 @@
 """可审阅的两参数网格搜索校准。"""
 
 from dataclasses import dataclass, replace
+from itertools import islice
 from math import fsum, hypot, isclose, isfinite, sqrt
 from sys import float_info
 
@@ -16,6 +17,9 @@ from numeric_utils import is_boolean_scalar
 FIT_FIELDS = ("viable_cells", "glucose_mM", "lactate_mM")
 # 与当前培养场景可配置的最长运行时段一致；这不是生物学有效期。
 MAX_CALIBRATION_HORIZON_H = 168.0
+# Mirrors the CSV parser's practical row cap for direct replay callers; not a
+# biological time-point limit.
+MAX_CALIBRATION_TARGET_TIMES = 5_000
 CALIBRATION_SCALE_BOUNDS = {
     "growth_scale": (0.1, 2.0),
     "uptake_scale": (0.1, 3.0),
@@ -74,7 +78,11 @@ def _make_cell(template: CellCulture, initial: dict, growth_scale: float, uptake
 
 
 def replay_from_initial(template: CellCulture, initial: dict, target_times, growth_scale: float, uptake_scale: float) -> tuple[CellCulture, list[dict]]:
-    """从历史首点重演至有限目标时刻；每段内部步长不超过 1 h。"""
+    """从历史首点重演至有限目标时刻；每段内部步长不超过 1 h。
+
+    目标时间单位为小时。为控制直接 API 调用的内存占用，单次最多接受
+    ``MAX_CALIBRATION_TARGET_TIMES`` 个时间点；这不是生物学采样上限。
+    """
 
     if not isinstance(template, CellCulture):
         raise ValueError("校准重演模板必须是有效的培养状态对象。")
@@ -118,7 +126,14 @@ def replay_from_initial(template: CellCulture, initial: dict, target_times, grow
     if isinstance(target_times, (str, bytes)):
         raise ValueError("校准重演时间必须是有限小时数。")
     try:
-        raw_targets = list(target_times)
+        raw_targets = list(islice(iter(target_times), MAX_CALIBRATION_TARGET_TIMES + 1))
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("校准重演时间必须是有限小时数。") from None
+    if len(raw_targets) > MAX_CALIBRATION_TARGET_TIMES:
+        raise ValueError(
+            f"校准重演单次最多接受 {MAX_CALIBRATION_TARGET_TIMES:,} 个目标时间点；请分批分析。"
+        )
+    try:
         if any(is_boolean_scalar(value) for value in raw_targets):
             raise TypeError
         targets = [float(value) for value in raw_targets]
