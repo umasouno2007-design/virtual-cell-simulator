@@ -70,6 +70,8 @@ class CellCulture:
     ) -> None:
         if any(is_boolean_scalar(value) for value in (culture_volume_ml, surface_area_cm2, viable_cells)):
             raise ValueError("培养体积、培养面积和初始细胞数必须是数值，不能使用布尔值代替。")
+        if parameters is not None and not isinstance(parameters, ModelParameters):
+            raise ValueError("parameters 必须是 ModelParameters 对象或 None；不会静默改用默认参数。")
         self.profile: CellProfile = get_profile(profile_key)
         self.profile_key = self.profile.key
         self.culture_volume_ml = max(0.1, _finite_nonnegative(culture_volume_ml, 0.1))
@@ -97,7 +99,7 @@ class CellCulture:
         self.osmolality_mosm_kg = 300.0
         self.drug_um = 0.0
         self.energy_index = 100.0
-        self.parameters = parameters or ModelParameters()
+        self.parameters = ModelParameters() if parameters is None else parameters
         self.last_growth_rate_per_h = 0.0
         self.last_death_rate_per_h = 0.0
 

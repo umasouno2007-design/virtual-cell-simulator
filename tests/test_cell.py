@@ -41,6 +41,12 @@ class CellCultureTestCase(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "不能使用布尔值代替"):
                     CellCulture("a549", **kwargs)
 
+    def test_constructor_rejects_wrong_parameter_container_instead_of_using_defaults(self) -> None:
+        for invalid in ({}, [], False, "growth_scale=2"):
+            with self.subTest(parameters=invalid):
+                with self.assertRaisesRegex(ValueError, "ModelParameters 对象或 None"):
+                    CellCulture("hela", parameters=invalid)
+
     def test_pandas_boolean_scalar_is_not_accepted_as_culture_number(self) -> None:
         pandas_boolean = pd.Series([True]).iloc[0]
         with self.assertRaisesRegex(ValueError, "不能使用布尔值代替"):
