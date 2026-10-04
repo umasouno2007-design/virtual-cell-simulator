@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from math import isfinite
 import pandas as pd
 
-from experiment_data import FIELD_LABELS, MAX_CSV_ROWS
+from experiment_data import FIELD_LABELS, MAX_CSV_ROWS, MODEL_STATE_BOUNDS
 from version import MODEL_VERSION
 
 
@@ -141,11 +141,14 @@ def quality_report(data: pd.DataFrame) -> dict:
         missing_count = int(values.isna().sum())
         if missing_count:
             warnings.append((f"{FIELD_LABELS[field]}存在缺失值（{missing_count} 个）", "确认空值确为未测量；不要用 0 或 Inf 代替缺失。"))
-    if "viability_percent" in data and (numeric_series(data["viability_percent"]).dropna() > 100).any():
+    viability_upper = MODEL_STATE_BOUNDS["viability_percent"][1]
+    oxygen_upper = MODEL_STATE_BOUNDS["oxygen_percent"][1]
+    ph_lower, ph_upper = MODEL_STATE_BOUNDS["pH"]
+    if "viability_percent" in data and (numeric_series(data["viability_percent"]).dropna() > viability_upper).any():
         blocked.append(("存活率超过 100%", "请确认使用百分比而非比例，并核对导入单位。"))
     if "oxygen_percent" in data and (numeric_series(data["oxygen_percent"]).dropna() > 100).any():
         blocked.append(("氧百分比超过 100%", "核对该列是否实际使用饱和度、分压或其他单位。"))
-    elif "oxygen_percent" in data and (numeric_series(data["oxygen_percent"]).dropna() > 21).any():
+    elif "oxygen_percent" in data and (numeric_series(data["oxygen_percent"]).dropna() > oxygen_upper).any():
         blocked.append((
             "氧代理值超过模型 0–21% 范围",
             "本列对应培养模型的局部氧可用性代理；溶氧饱和度 %、分压或培养箱设定值不能直接当作相同观测量。请核对来源与换算依据。",
@@ -159,7 +162,7 @@ def quality_report(data: pd.DataFrame) -> dict:
         observed_ph = numeric_series(data["pH"]).dropna()
         if (observed_ph > 14).any():
             blocked.append(("pH 超出 0–14 的常规标度", "核对 CSV 中的酸碱指标单位与列映射。"))
-        elif ((observed_ph < 6.2) | (observed_ph > 8.0)).any():
+        elif ((observed_ph < ph_lower) | (observed_ph > ph_upper)).any():
             blocked.append((
                 "pH 超出当前培养模型 6.2–8.0 的状态范围",
                 "该测量可能有效，但现有模型会在范围边界裁剪 pH；请核对单位，并避免将此区间外数据用于当前模型对齐或校准。",
