@@ -52,6 +52,23 @@ class CellCultureTestCase(unittest.TestCase):
                     action()
                 self.assertEqual(cell.snapshot(), before)
 
+    def test_medium_exchange_is_atomic_when_a_late_field_is_invalid(self) -> None:
+        cell = CellCulture("a549")
+        cell.glucose_mm = 2.0
+        cell.glutamine_mm = "invalid"
+        before = cell.snapshot()
+        with self.assertRaisesRegex(ValueError, "培养状态 glutamine_mm"):
+            cell.exchange_medium(0.5)
+        self.assertEqual(cell.snapshot(), before)
+
+    def test_medium_exchange_rejects_nonfinite_state_without_partial_changes(self) -> None:
+        cell = CellCulture("a549")
+        cell.osmolality_mosm_kg = float("inf")
+        before = cell.snapshot()
+        with self.assertRaisesRegex(ValueError, "不是有效有限数值"):
+            cell.exchange_medium(0.5)
+        self.assertEqual(cell.snapshot(), before)
+
     def test_standard_culture_grows_and_uses_glucose(self) -> None:
         cell = CellCulture("hela")
         cells_before = cell.viable_cells

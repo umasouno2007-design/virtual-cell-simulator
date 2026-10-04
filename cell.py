@@ -317,12 +317,29 @@ class CellCulture:
         """更换指定比例培养基，1.0 表示全量换液。"""
 
         fraction = min(1.0, _finite_action_amount(fraction, "换液比例"))
-        self.glucose_mm += (self.profile.initial_glucose_mm - self.glucose_mm) * fraction
-        self.glutamine_mm += (self.profile.initial_glutamine_mm - self.glutamine_mm) * fraction
-        self.lactate_mm *= 1.0 - fraction
-        self.drug_um *= 1.0 - fraction
-        self.ph += (7.4 - self.ph) * fraction
-        self.osmolality_mosm_kg += (300.0 - self.osmolality_mosm_kg) * fraction
+        fields_to_update = (
+            "glucose_mm", "glutamine_mm", "lactate_mm", "drug_um", "ph",
+            "osmolality_mosm_kg",
+        )
+        current: dict[str, float] = {}
+        for name in fields_to_update:
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value):
+                raise ValueError(f"无法执行换液：培养状态 {name} 不是有效有限数值。")
+            current[name] = float(value)
+
+        updated = {
+            "glucose_mm": current["glucose_mm"] + (self.profile.initial_glucose_mm - current["glucose_mm"]) * fraction,
+            "glutamine_mm": current["glutamine_mm"] + (self.profile.initial_glutamine_mm - current["glutamine_mm"]) * fraction,
+            "lactate_mm": current["lactate_mm"] * (1.0 - fraction),
+            "drug_um": current["drug_um"] * (1.0 - fraction),
+            "ph": current["ph"] + (7.4 - current["ph"]) * fraction,
+            "osmolality_mosm_kg": current["osmolality_mosm_kg"] + (300.0 - current["osmolality_mosm_kg"]) * fraction,
+        }
+        if not all(isfinite(value) for value in updated.values()):
+            raise ValueError("无法执行换液：计算结果超出有限数值范围。")
+        for name, value in updated.items():
+            setattr(self, name, value)
 
     def add_drug(self, concentration_um: float) -> None:
         """设置药物浓度；药物效应取决于用户提供的 IC50/Hill 参数。"""
