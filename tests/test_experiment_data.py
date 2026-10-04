@@ -198,6 +198,26 @@ class ExperimentDataTestCase(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     comparison_frame(simulation, observed)
 
+    def test_comparison_turns_unrepresentably_large_python_integers_into_domain_errors(self) -> None:
+        huge = 10**10000
+        simulation = pd.DataFrame({
+            "time_h": pd.Series([0, 24], dtype=object),
+            "viable_cells": pd.Series([100, 200], dtype=object),
+        })
+        observed = pd.DataFrame({
+            "time_h": pd.Series([0, 24], dtype=object),
+            "viable_cells": pd.Series([100, huge], dtype=object),
+        })
+        with self.assertRaisesRegex(ValueError, "数值或缺失值|非有限|无法解析"):
+            comparison_frame(simulation, observed)
+
+        oversized_time = pd.DataFrame({
+            "time_h": pd.Series([0, huge], dtype=object),
+            "viable_cells": pd.Series([100, 200], dtype=object),
+        })
+        with self.assertRaisesRegex(ValueError, "时间列"):
+            comparison_frame(simulation, oversized_time)
+
     def test_comparison_does_not_extrapolate_beyond_simulation_history(self) -> None:
         simulation = pd.DataFrame({"time_h": [0.0, 24.0], "viable_cells": [100.0, 200.0]})
         observed = pd.DataFrame({"time_h": [12.0, 48.0], "viable_cells": [140.0, 300.0]})

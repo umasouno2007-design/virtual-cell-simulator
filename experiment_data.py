@@ -41,6 +41,17 @@ MAX_CSV_BYTES = 5 * 1024 * 1024
 MAX_CSV_ROWS = 5_000
 
 
+def _finite_or_missing(value: object) -> bool:
+    """Check a parsed table scalar without leaking conversion overflow details."""
+
+    if pd.isna(value):
+        return True
+    try:
+        return isfinite(float(value))
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
 def measurement_fingerprint(contents: bytes) -> str:
     """Return a stable SHA-256 identity for uploaded CSV bytes (not a privacy/security token)."""
 
@@ -187,7 +198,7 @@ def comparison_frame(simulation: pd.DataFrame, measurements: pd.DataFrame) -> pd
             times = pd.to_numeric(frame["time_h"], errors="coerce")
         except (TypeError, ValueError, OverflowError):
             raise ValueError(f"{label}时间列必须是有限、非负的小时数。") from None
-        if times.isna().any() or not times.map(lambda value: isfinite(float(value))).all() or (times < 0).any():
+        if times.isna().any() or not times.map(_finite_or_missing).all() or (times < 0).any():
             raise ValueError(f"{label}时间列必须是有限、非负的小时数。")
         if label == "实测" and times.duplicated().any():
             raise ValueError("实测时间点重复；请先核对原始记录并显式生成标准化副本。")
@@ -202,7 +213,7 @@ def comparison_frame(simulation: pd.DataFrame, measurements: pd.DataFrame) -> pd
                 raise ValueError(f"{label}字段 {FIELD_LABELS[field]}必须为数值或缺失值。") from None
             if (raw_values.notna() & numeric_values.isna()).any():
                 raise ValueError(f"{label}字段 {FIELD_LABELS[field]}包含无法解析的非空值。")
-            if not numeric_values.map(lambda value: isfinite(float(value)) if pd.notna(value) else True).all():
+            if not numeric_values.map(_finite_or_missing).all():
                 raise ValueError(f"{label}字段 {FIELD_LABELS[field]}包含非有限数值。")
             normalized[field] = numeric_values
         normalized_frames[label] = normalized
