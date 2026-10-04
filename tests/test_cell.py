@@ -98,7 +98,7 @@ class CellCultureTestCase(unittest.TestCase):
         self.assertEqual(cell.snapshot(), before)
 
     def test_glucose_addition_rejects_invalid_existing_medium_without_mutation(self) -> None:
-        for invalid in (True, "invalid", float("nan"), float("inf"), 10**10000):
+        for invalid in (-1.0, True, "invalid", float("nan"), float("inf"), 10**10000):
             with self.subTest(value_type=type(invalid).__name__):
                 cell = CellCulture("a549")
                 cell.glucose_mm = invalid

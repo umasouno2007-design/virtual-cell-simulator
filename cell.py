@@ -379,9 +379,10 @@ class CellCulture:
             finite = isfinite(current)
         except OverflowError:
             finite = False
-        if not finite:
-            raise ValueError("无法补充葡萄糖：培养状态 glucose_mm 不是有效有限数值。")
-        self.glucose_mm = min(100.0, float(current) + increase)
+        current_mm = float(current) if finite else float("nan")
+        if not finite or current_mm < 0.0:
+            raise ValueError("无法补充葡萄糖：培养状态 glucose_mm 必须是有限非负数值。")
+        self.glucose_mm = min(100.0, current_mm + increase)
 
     def snapshot(self) -> Dict[str, float | str]:
         """返回带真实单位列名的历史记录。"""
