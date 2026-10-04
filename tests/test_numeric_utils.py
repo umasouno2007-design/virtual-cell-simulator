@@ -2,7 +2,7 @@
 
 import unittest
 
-from numeric_utils import clamp_finite
+from numeric_utils import checked_time_advance, clamp_finite
 
 
 class ClampFiniteTests(unittest.TestCase):
@@ -16,6 +16,12 @@ class ClampFiniteTests(unittest.TestCase):
     def test_malformed_values_are_not_silently_coerced(self) -> None:
         with self.assertRaises((TypeError, ValueError)):
             clamp_finite(None)
+
+    def test_boolean_clock_values_are_not_accepted_as_numeric_time(self) -> None:
+        with self.assertRaisesRegex(ValueError, "模拟时钟无法安全推进"):
+            checked_time_advance(True, 0.25)
+        with self.assertRaisesRegex(ValueError, "模拟时钟无法安全推进"):
+            checked_time_advance(0.0, False)
 
 
 if __name__ == "__main__":

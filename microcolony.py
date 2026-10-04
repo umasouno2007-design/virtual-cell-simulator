@@ -264,6 +264,7 @@ class MicrocolonyState:
                 type(self.cell_count) is not int
                 or not 3 <= self.cell_count <= 50
                 or type(self.communication_enabled) is not bool
+                or isinstance(self.time_h, bool)
                 or len(self.cells) != self.cell_count
                 or not isfinite(float(self.time_h))
                 or self.time_h < 0

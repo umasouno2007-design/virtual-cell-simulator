@@ -179,6 +179,8 @@ class CellCulture:
             raise ValueError("培养单步时长必须是 0–6 h 内的有限数值。")
         if dt_h == 0.0:
             return
+        if isinstance(self.time_h, bool):
+            raise ValueError("模拟时钟无法安全推进；请重置或载入有效状态。")
         was_alive = self.alive
         current_time_h = _finite_nonnegative(self.time_h)
         next_time_h = checked_time_advance(current_time_h, dt_h) if was_alive else None

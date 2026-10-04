@@ -19,6 +19,8 @@ def clamp_finite(value: float, low: float = 0.0, high: float = 100.0) -> float:
 def checked_time_advance(current_h: float, delta_h: float) -> float:
     """Return a representable later model time in hours, or fail before mutation."""
 
+    if isinstance(current_h, bool) or isinstance(delta_h, bool):
+        raise ValueError("模拟时钟无法安全推进；请重置或载入有效状态。")
     try:
         current = float(current_h)
         delta = float(delta_h)
