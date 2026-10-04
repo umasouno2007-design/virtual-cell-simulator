@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from math import ceil, exp, isfinite, sqrt
+from math import ceil, exp, isclose, isfinite, sqrt
 from typing import TYPE_CHECKING
 
 from intracellular import MAX_INTERNAL_STEP_H
@@ -36,6 +36,34 @@ class CellCommunicationState:
 
         return asdict(self)
 
+    def finite(self) -> bool:
+        """Return whether all relative indices and subgroup fractions are valid."""
+
+        names = (
+            "resilient_fraction", "stressed_fraction", "injured_fraction",
+            "stress_signal_index", "receiver_response_index", "time_h",
+        )
+        values: dict[str, float] = {}
+        for name in names:
+            raw = getattr(self, name)
+            if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+                return False
+            value = float(raw)
+            if not isfinite(value):
+                return False
+            values[name] = value
+        if values["time_h"] < 0.0:
+            return False
+        if any(not 0.0 <= values[name] <= 100.0 for name in names[:-1]):
+            return False
+        return isclose(
+            values["resilient_fraction"] + values["stressed_fraction"]
+            + values["injured_fraction"],
+            100.0,
+            rel_tol=0.0,
+            abs_tol=1e-6,
+        )
+
     def step(
         self,
         intracellular: "IntracellularState",
@@ -60,6 +88,10 @@ class CellCommunicationState:
             raise ValueError("通信层时间步长必须是 0–24 h 内的有限数值。")
         if dt_h == 0.0:
             return
+        if type(feedback_enabled) is not bool:
+            raise ValueError("通信反馈开关必须是布尔值。")
+        if not self.finite():
+            raise ValueError("通信状态包含越界、非有限或不守恒数值；请重置或载入有效状态。")
         next_time_h = checked_time_advance(self.time_h, dt_h)
         if dt_h > MAX_INTERNAL_STEP_H:
             remaining_h = dt_h

@@ -68,6 +68,27 @@ class CellCommunicationTests(unittest.TestCase):
         state.step(IntracellularState(), 0.0)
         self.assertEqual(state.snapshot(), before)
 
+    def test_invalid_saved_communication_state_is_rejected_without_mutation(self) -> None:
+        invalid_states = (
+            CellCommunicationState(resilient_fraction=90.0),
+            CellCommunicationState(stress_signal_index=float("nan")),
+            CellCommunicationState(receiver_response_index=101.0),
+            CellCommunicationState(time_h=-1.0),
+        )
+        for state in invalid_states:
+            with self.subTest(state=state):
+                before = state.snapshot()
+                with self.assertRaisesRegex(ValueError, "通信状态包含越界"):
+                    state.step(IntracellularState(), 0.25)
+                self.assertEqual(state.snapshot(), before)
+
+    def test_feedback_flag_requires_an_explicit_boolean(self) -> None:
+        state = CellCommunicationState()
+        before = state.snapshot()
+        with self.assertRaisesRegex(ValueError, "通信反馈开关必须是布尔值"):
+            state.step(IntracellularState(), 0.25, feedback_enabled="false")
+        self.assertEqual(state.snapshot(), before)
+
     def test_clock_precision_loss_is_rejected_before_communication_changes(self) -> None:
         state = CellCommunicationState(time_h=1e20)
         before = state.snapshot()
