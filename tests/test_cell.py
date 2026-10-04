@@ -89,6 +89,14 @@ class CellCultureTestCase(unittest.TestCase):
             cell.exchange_medium(0.5)
         self.assertEqual(cell.snapshot(), before)
 
+    def test_medium_exchange_rejects_unrepresentably_large_state_atomically(self) -> None:
+        cell = CellCulture("a549")
+        cell.glucose_mm = 10**10000
+        before = cell.snapshot()
+        with self.assertRaisesRegex(ValueError, "培养状态 glucose_mm"):
+            cell.exchange_medium(0.5)
+        self.assertEqual(cell.snapshot(), before)
+
     def test_standard_culture_grows_and_uses_glucose(self) -> None:
         cell = CellCulture("hela")
         cells_before = cell.viable_cells

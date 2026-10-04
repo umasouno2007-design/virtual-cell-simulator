@@ -340,7 +340,13 @@ class CellCulture:
         current: dict[str, float] = {}
         for name in fields_to_update:
             value = getattr(self, name)
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value):
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"无法执行换液：培养状态 {name} 不是有效有限数值。")
+            try:
+                finite = isfinite(value)
+            except OverflowError:
+                finite = False
+            if not finite:
                 raise ValueError(f"无法执行换液：培养状态 {name} 不是有效有限数值。")
             current[name] = float(value)
 
