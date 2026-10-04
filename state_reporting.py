@@ -35,7 +35,7 @@ def intracellular_change_summary(history: list[dict[str, Any]]) -> list[dict[str
     if previous is not None:
         try:
             delta_time = float(latest["time_h"]) - float(previous["time_h"])
-        except (KeyError, TypeError, ValueError):
+        except (KeyError, TypeError, ValueError, OverflowError):
             delta_time = None
         if delta_time is not None and (not isfinite(delta_time) or delta_time < 0):
             delta_time = None
@@ -44,7 +44,7 @@ def intracellular_change_summary(history: list[dict[str, Any]]) -> list[dict[str
     for key, label in _INDEX_LABELS.items():
         try:
             current = float(latest[key])
-        except (KeyError, TypeError, ValueError):
+        except (KeyError, TypeError, ValueError, OverflowError):
             continue
         if not isfinite(current):
             continue
@@ -64,7 +64,7 @@ def intracellular_change_summary(history: list[dict[str, Any]]) -> list[dict[str
                     note = "同一模拟时点的干预/状态更新；不计算每小时速率"
                 else:
                     note = "时间信息无效；不计算每小时速率"
-            except (KeyError, TypeError, ValueError):
+            except (KeyError, TypeError, ValueError, OverflowError):
                 note = "缺少有效的前一条指标值"
         rows.append({
             "指标": label,

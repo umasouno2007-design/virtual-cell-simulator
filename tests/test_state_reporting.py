@@ -44,6 +44,17 @@ class IntracellularChangeSummaryTests(unittest.TestCase):
         ])
         self.assertEqual(rows, [])
 
+    def test_unrepresentably_large_imported_values_do_not_break_summary(self):
+        huge = 10**10000
+        rows = intracellular_change_summary([
+            {"time_h": 0.0, "ATP_percent": huge},
+            {"time_h": 1.0, "ATP_percent": 70.0},
+        ])
+        atp = next(row for row in rows if row["指标"] == "ATP")
+        self.assertEqual(atp["当前值（相对指数，0–100）"], 70.0)
+        self.assertIsNone(atp["较上一条记录变化（指数点）"])
+        self.assertIn("缺少有效", atp["说明"])
+
 
 if __name__ == "__main__":
     unittest.main()
