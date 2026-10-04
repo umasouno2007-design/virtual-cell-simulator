@@ -158,6 +158,30 @@ class CellCommunicationTests(unittest.TestCase):
             state.step(IntracellularState(), 0.25, feedback_enabled="false")
         self.assertEqual(state.snapshot(), before)
 
+    def test_direct_teaching_feedback_rejects_invalid_inputs_without_mutation(self) -> None:
+        communication = CellCommunicationState()
+        cell = IntracellularState()
+        before_cell = cell.snapshot()
+        for invalid_duration in (-1.0, 25.0, float("nan"), float("inf"), True, None):
+            with self.subTest(duration=invalid_duration):
+                with self.assertRaisesRegex(ValueError, "通信反馈时长"):
+                    communication.apply_teaching_feedback(cell, invalid_duration)
+                self.assertEqual(cell.snapshot(), before_cell)
+
+        invalid_cell = IntracellularState(ros_percent=float("nan"))
+        before_invalid = invalid_cell.snapshot()
+        with self.assertRaisesRegex(ValueError, "通信反馈输入的单细胞状态无效"):
+            communication.apply_teaching_feedback(invalid_cell, 1.0)
+        self.assertTrue(math.isnan(invalid_cell.ros_percent))
+        self.assertEqual(invalid_cell.time_h, before_invalid["time_h"])
+
+        invalid_communication = CellCommunicationState(receiver_response_index=float("nan"))
+        normal_cell = IntracellularState()
+        before_normal = normal_cell.snapshot()
+        with self.assertRaisesRegex(ValueError, "通信反馈的信号状态无效"):
+            invalid_communication.apply_teaching_feedback(normal_cell, 1.0)
+        self.assertEqual(normal_cell.snapshot(), before_normal)
+
     def test_invalid_upstream_cell_state_is_not_masked_as_low_stress(self) -> None:
         state = CellCommunicationState()
         before_communication = state.snapshot()

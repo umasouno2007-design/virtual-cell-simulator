@@ -192,9 +192,24 @@ class CellCommunicationState:
         """对代表性细胞施加可选、温和且有界的教学性反馈。
 
         这不是培养动力学的反馈项；只用于帮助观察“接收端响应可能放大压力”的
-        方向性关系。调用者须由用户界面明确授权。
+        方向性关系。调用者须由用户界面明确授权；时间步长单位为小时且必须
+        有限，输入状态必须有效。
         """
 
+        if is_boolean_scalar(dt_h):
+            raise ValueError("通信反馈时长必须是 0–24 h 内的有限数值。")
+        try:
+            dt_h = float(dt_h)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError("通信反馈时长必须是 0–24 h 内的有限数值。") from None
+        if not isfinite(dt_h) or not 0.0 <= dt_h <= 24.0:
+            raise ValueError("通信反馈时长必须是 0–24 h 内的有限数值。")
+        if not isinstance(intracellular, IntracellularState) or not intracellular.finite():
+            raise ValueError("通信反馈输入的单细胞状态无效；请重置或载入有效状态。")
+        if not self.finite():
+            raise ValueError("通信反馈的信号状态无效；请重置或载入有效状态。")
+        if dt_h == 0.0:
+            return
         signal = self.receiver_response_index / 100.0
         intracellular.ros_percent = _clamp(intracellular.ros_percent + 1.2 * signal * dt_h)
         intracellular.er_stress_percent = _clamp(intracellular.er_stress_percent + 0.9 * signal * dt_h)
