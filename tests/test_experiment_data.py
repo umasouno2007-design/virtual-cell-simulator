@@ -131,6 +131,18 @@ class ExperimentDataTestCase(unittest.TestCase):
         comparison = comparison_frame(simulation, observed)
         self.assertEqual(comparison.loc[0, "glucose_mM_simulated"], 6.0)
 
+    def test_comparison_rejects_boolean_times_and_measurements(self) -> None:
+        simulation = pd.DataFrame({
+            "time_h": [0.0, 24.0], "viable_cells": [100.0, 200.0],
+        })
+        boolean_time = pd.DataFrame({"time_h": [False, True], "viable_cells": [100, 200]})
+        with self.assertRaisesRegex(ValueError, "实测字段 时间（h）包含布尔值"):
+            comparison_frame(simulation, boolean_time)
+
+        boolean_measurement = pd.DataFrame({"time_h": [0.0, 24.0], "viable_cells": [True, False]})
+        with self.assertRaisesRegex(ValueError, "实测字段 活细胞数包含布尔值"):
+            comparison_frame(simulation, boolean_measurement)
+
     def test_comparison_does_not_extrapolate_beyond_simulation_history(self) -> None:
         simulation = pd.DataFrame({"time_h": [0.0, 24.0], "viable_cells": [100.0, 200.0]})
         observed = pd.DataFrame({"time_h": [12.0, 48.0], "viable_cells": [140.0, 300.0]})

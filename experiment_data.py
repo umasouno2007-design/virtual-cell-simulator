@@ -157,10 +157,19 @@ def standardize_measurements(contents: bytes) -> tuple[pd.DataFrame, list[str]]:
 
 
 def comparison_frame(simulation: pd.DataFrame, measurements: pd.DataFrame) -> pd.DataFrame:
-    """将模拟历史线性插值到每个实测时间点，并计算逐点残差。"""
+    """将标准化数值历史插值到观测时间点；拒绝把布尔值当成数值数据。"""
 
     if "time_h" not in simulation or "time_h" not in measurements:
         raise ValueError("模拟和实测数据都必须包含 time_h。")
+    for label, frame in (("模拟", simulation), ("实测", measurements)):
+        for field in FIELD_LABELS:
+            if field not in frame:
+                continue
+            contains_boolean = frame[field].map(
+                lambda value: pd.api.types.is_bool_dtype(type(value)) if pd.notna(value) else False
+            ).any()
+            if contains_boolean:
+                raise ValueError(f"{label}字段 {FIELD_LABELS[field]}包含布尔值；请使用正确单位的数值数据。")
     # 同一模拟时刻可先后有干预前/后快照；稳定排序让 keep="last"
     # 确定地选择事件后的最后记录。
     simulation = simulation.sort_values("time_h", kind="stable").drop_duplicates("time_h", keep="last")
