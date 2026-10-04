@@ -103,7 +103,13 @@ def main() -> None:
         events=[],
     )
     assert manifest["experiment"]["profile_key"] == "a549"
-    assert run_case(output_dir=None)["validation_metrics"]
+    # A smoke check must be read-only with respect to tracked teaching outputs.
+    with TemporaryDirectory() as validation_dir:
+        validation_output = Path(validation_dir)
+        validation = run_case(output_dir=validation_output)
+        assert validation["validation_metrics"]
+        assert (validation_output / "summary.json").is_file()
+        assert (validation_output / "a549_training_holdout.png").is_file()
 
     # 相同环境与步长必须产生确定性相同结果，且场景状态可往返恢复。
     first_state, first_env, first_history, first_events = _single_cell_run()
