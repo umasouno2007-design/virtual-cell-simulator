@@ -120,7 +120,7 @@ class MicrocolonyState:
                 self.step(environment, substep_h)
                 remaining_h -= substep_h
             return
-        environment = environment.normalized()
+        environment = environment.normalized_copy()
         releases = [self._release(cell) for cell in self.cells]
         signals: list[float] = []
         for target in self.cells:

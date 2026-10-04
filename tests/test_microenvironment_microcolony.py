@@ -38,6 +38,23 @@ class MicroenvironmentAndMicrocolonyTests(unittest.TestCase):
         self.assertTrue(math.isfinite(environment.time_h))
         self.assertTrue(math.isfinite(environment.glucose_mm))
 
+    def test_normalized_copy_cleans_environment_without_mutating_source(self) -> None:
+        source = MicroenvironmentState(time_h=math.inf, glucose_mm=math.nan, ph=20.0)
+        before = dict(source.__dict__)
+        clean = source.normalized_copy()
+        self.assertIsNot(clean, source)
+        self.assertEqual(source.__dict__, before)
+        self.assertEqual(clean.time_h, 0.0)
+        self.assertEqual(clean.glucose_mm, 0.0)
+        self.assertEqual(clean.ph, 9.0)
+
+    def test_single_cell_and_colony_steps_do_not_mutate_shared_environment(self) -> None:
+        environment = MicroenvironmentState(glucose_mm=math.nan, ph=20.0)
+        before = dict(environment.__dict__)
+        IntracellularState().step(environment, 0.25)
+        MicrocolonyState(cell_count=3).step(environment, 0.25)
+        self.assertEqual(environment.__dict__, before)
+
     def test_invalid_single_and_colony_steps_do_not_silently_return(self) -> None:
         environment = MicroenvironmentState()
         state = IntracellularState()

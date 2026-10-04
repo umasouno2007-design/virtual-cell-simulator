@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import isfinite
 
 
@@ -55,7 +55,7 @@ class MicroenvironmentState:
     drug_ic50_um: float = 10.0
 
     def normalized(self) -> "MicroenvironmentState":
-        """原位裁剪外部输入，防止单细胞状态传播 NaN 或无意义数值。"""
+        """原位裁剪此输入对象，供显式清洗配置时使用。"""
 
         try:
             time_h = float(self.time_h)
@@ -73,6 +73,11 @@ class MicroenvironmentState:
         self.doubling_time_h = max(1.0, _bounded(self.doubling_time_h, 1.0, 500.0))
         self.drug_ic50_um = max(1e-6, _bounded(self.drug_ic50_um, 1e-6, 1e6))
         return self
+
+    def normalized_copy(self) -> "MicroenvironmentState":
+        """Return a cleaned copy without changing the caller's environment snapshot."""
+
+        return replace(self).normalized()
 
     @classmethod
     def from_culture(cls, culture: object) -> "MicroenvironmentState":

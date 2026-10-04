@@ -116,9 +116,9 @@ class IntracellularState:
             return
         # 兼容旧调用：现有培养工作流继续传入 CellCulture；新单细胞/微群体只传入环境。
         microenvironment = (
-            environment if isinstance(environment, MicroenvironmentState)
+            environment.normalized_copy() if isinstance(environment, MicroenvironmentState)
             else MicroenvironmentState.from_culture(environment)
-        ).normalized()
+        )
         local_oxygen_availability = microenvironment.local_oxygen_availability
         glucose = _bounded(
             microenvironment.glucose_mm / microenvironment.glucose_reference_mm,
