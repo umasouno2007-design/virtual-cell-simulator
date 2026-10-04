@@ -1,7 +1,8 @@
 """可审阅的两参数网格搜索校准。"""
 
 from dataclasses import dataclass, replace
-from math import isclose, isfinite
+from math import fsum, hypot, isclose, isfinite, sqrt
+from sys import float_info
 
 import pandas as pd
 
@@ -133,8 +134,7 @@ def _score(comparison: pd.DataFrame, weights: dict[str, float] | None = None) ->
     """计算按观测量纲归一化后的加权 RMSE；权重是可解释偏好而非统计权重。"""
 
     resolved_weights = _validated_weights(weights)
-    weighted_squared_error = 0.0
-    total_weight = 0.0
+    weighted_residuals: list[tuple[float, pd.Series, list[float]]] = []
     for field in FIT_FIELDS:
         observed = f"{field}_observed"
         residual = f"{field}_residual"
@@ -151,11 +151,54 @@ def _score(comparison: pd.DataFrame, weights: dict[str, float] | None = None) ->
         values = comparison[[observed, residual]].dropna()
         if len(values) < 2:
             continue
-        scale = max(float(values[observed].abs().max()), float(values[observed].max() - values[observed].min()), 1.0)
-        normalized_squared = (values[residual] / scale).pow(2)
-        weighted_squared_error += float((normalized_squared * weight).sum())
-        total_weight += weight * len(normalized_squared)
-    return float("inf") if total_weight <= 0 else (weighted_squared_error / total_weight) ** 0.5
+        absolute_maximum = float(values[observed].abs().max())
+        observed_maximum = float(values[observed].max())
+        observed_minimum = float(values[observed].min())
+        observed_range = observed_maximum - observed_minimum
+        if not isfinite(observed_range):
+            # Opposite-sign finite extremes can overflow during subtraction;
+            # absolute magnitude is still a finite, conservative scale.
+            observed_range = absolute_maximum
+        scale = max(absolute_maximum, observed_range, 1.0)
+        normalized_series = values[residual] / scale
+        normalized = [float(value) for value in normalized_series]
+        if not all(isfinite(value) for value in normalized):
+            return float("inf")
+        weighted_residuals.append((weight, normalized_series, normalized))
+    if not weighted_residuals:
+        return float("inf")
+    maximum_weight = max(weight for weight, _, _ in weighted_residuals)
+    total_points = sum(len(values) for _, _, values in weighted_residuals)
+    maximum_absolute_residual = max(
+        abs(value) for _, _, values in weighted_residuals for value in values
+    )
+    if maximum_weight <= float_info.max / total_points:
+        maximum_weighted_points = maximum_weight * total_points
+        safe_residual_limit = sqrt(float_info.max / maximum_weighted_points)
+    else:
+        safe_residual_limit = 0.0
+    if maximum_absolute_residual <= safe_residual_limit:
+        # Keep the original accumulation order whenever intermediates are
+        # provably finite, preserving published/demo calibration summaries.
+        weighted_squared_error = 0.0
+        total_weight = 0.0
+        for weight, normalized_series, _ in weighted_residuals:
+            normalized_squared = normalized_series.pow(2)
+            weighted_squared_error += float((normalized_squared * weight).sum())
+            total_weight += weight * len(normalized_squared)
+        return (weighted_squared_error / total_weight) ** 0.5
+    # Scale active preferences first; relative weights and the RMSE definition
+    # are preserved without overflowing finite weight sums or residual squares.
+    scaled_terms = [
+        (weight / maximum_weight, residuals)
+        for weight, _, residuals in weighted_residuals
+    ]
+    numerator = hypot(*(
+        sqrt(weight) * hypot(*residuals)
+        for weight, residuals in scaled_terms
+    ))
+    denominator = sqrt(fsum(weight * len(residuals) for weight, residuals in scaled_terms))
+    return numerator / denominator
 
 
 def fit_growth_and_uptake(

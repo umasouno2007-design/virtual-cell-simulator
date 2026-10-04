@@ -6,7 +6,9 @@
 
 from hashlib import sha256
 from io import BytesIO
+from math import fsum, hypot, isfinite, sqrt
 import re
+from sys import float_info
 import warnings
 from typing import Iterable
 
@@ -204,7 +206,20 @@ def residual_summary(comparison: pd.DataFrame) -> pd.DataFrame:
             continue
         residual = pd.to_numeric(comparison[residual_column], errors="coerce").dropna()
         if not residual.empty:
-            rows.append({"指标": label, "可比较点数": len(residual), "MAE": abs(residual).mean(), "RMSE": (residual.pow(2).mean()) ** 0.5})
+            values = [float(value) for value in residual]
+            if not all(isfinite(value) for value in values):
+                raise ValueError(f"{label}残差包含非有限值，无法计算 MAE/RMSE。")
+            count = len(values)
+            maximum_absolute = max(abs(value) for value in values)
+            if maximum_absolute <= sqrt(float_info.max / count):
+                # Preserve historical floating-point results when the legacy
+                # sum-of-squares path is provably within range.
+                mae = abs(residual).mean()
+                rmse = (residual.pow(2).mean()) ** 0.5
+            else:
+                mae = fsum(abs(value) / count for value in values)
+                rmse = hypot(*values) / sqrt(count)
+            rows.append({"指标": label, "可比较点数": count, "MAE": mae, "RMSE": rmse})
     return pd.DataFrame(rows)
 
 

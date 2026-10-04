@@ -77,6 +77,20 @@ class CalibrationTestCase(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "权重"):
                     _score(comparison, invalid_weights)
 
+    def test_normalized_score_is_stable_for_extreme_finite_values_and_weights(self) -> None:
+        comparison = pd.DataFrame({
+            "viable_cells_observed": [0.0, 0.0, 0.0],
+            "viable_cells_residual": [1e308, 1e308, 1e308],
+        })
+        score = _score(comparison, {"viable_cells": 1e308})
+        self.assertEqual(score, 1e308)
+
+        opposite_sign = pd.DataFrame({
+            "viable_cells_observed": [-1e308, 1e308],
+            "viable_cells_residual": [1e308, 1e308],
+        })
+        self.assertEqual(_score(opposite_sign), 1.0)
+
     def test_fit_uses_measurements_and_returns_bounded_parameters(self) -> None:
         cell = CellCulture("hela")
         initial = cell.snapshot()

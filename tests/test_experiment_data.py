@@ -135,6 +135,15 @@ class ExperimentDataTestCase(unittest.TestCase):
         self.assertAlmostEqual(comparison.loc[0, "viable_cells_residual"], 10.0)
         self.assertAlmostEqual(residual_summary(comparison).loc[0, "MAE"], 10.0)
 
+    def test_error_summary_avoids_overflow_for_large_finite_residuals(self) -> None:
+        summary = residual_summary(pd.DataFrame({"viable_cells_residual": [1e308, 1e308]}))
+        self.assertEqual(summary.loc[0, "MAE"], 1e308)
+        self.assertEqual(summary.loc[0, "RMSE"], 1e308)
+
+    def test_error_summary_rejects_non_finite_residuals(self) -> None:
+        with self.assertRaisesRegex(ValueError, "非有限值"):
+            residual_summary(pd.DataFrame({"viable_cells_residual": [float("inf")]}))
+
     def test_comparison_uses_last_same_time_simulation_snapshot(self) -> None:
         simulation = pd.DataFrame({
             "time_h": [1.0, 0.0, 1.0, 2.0],
