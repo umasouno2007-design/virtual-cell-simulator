@@ -97,6 +97,16 @@ class CellCultureTestCase(unittest.TestCase):
             cell.exchange_medium(0.5)
         self.assertEqual(cell.snapshot(), before)
 
+    def test_glucose_addition_rejects_invalid_existing_medium_without_mutation(self) -> None:
+        for invalid in (True, "invalid", float("nan"), float("inf"), 10**10000):
+            with self.subTest(value_type=type(invalid).__name__):
+                cell = CellCulture("a549")
+                cell.glucose_mm = invalid
+                before = cell.snapshot()
+                with self.assertRaisesRegex(ValueError, "培养状态 glucose_mm"):
+                    cell.add_glucose(1.0)
+                self.assertEqual(cell.snapshot(), before)
+
     def test_standard_culture_grows_and_uses_glucose(self) -> None:
         cell = CellCulture("hela")
         cells_before = cell.viable_cells

@@ -371,10 +371,17 @@ class CellCulture:
     def add_glucose(self, concentration_increase_mm: float) -> None:
         """按培养液终浓度增量补充葡萄糖。"""
 
-        self.glucose_mm = min(
-            100.0,
-            self.glucose_mm + _finite_action_amount(concentration_increase_mm, "葡萄糖补充量"),
-        )
+        increase = _finite_action_amount(concentration_increase_mm, "葡萄糖补充量")
+        current = self.glucose_mm
+        if isinstance(current, bool) or not isinstance(current, (int, float)):
+            raise ValueError("无法补充葡萄糖：培养状态 glucose_mm 不是有效有限数值。")
+        try:
+            finite = isfinite(current)
+        except OverflowError:
+            finite = False
+        if not finite:
+            raise ValueError("无法补充葡萄糖：培养状态 glucose_mm 不是有效有限数值。")
+        self.glucose_mm = min(100.0, float(current) + increase)
 
     def snapshot(self) -> Dict[str, float | str]:
         """返回带真实单位列名的历史记录。"""
