@@ -8,6 +8,25 @@ from experiment_data import FIELD_LABELS
 from version import MODEL_VERSION
 
 
+def _numeric_series(values: pd.Series) -> pd.Series:
+    """Parse values while preserving a reportable marker for oversized integers."""
+
+    try:
+        return pd.to_numeric(values, errors="coerce")
+    except OverflowError:
+        def convert(value):
+            if pd.isna(value):
+                return float("nan")
+            try:
+                return float(value)
+            except OverflowError:
+                return float("-inf") if value < 0 else float("inf")
+            except (TypeError, ValueError):
+                return float("nan")
+
+        return pd.Series([convert(value) for value in values], index=values.index, dtype=float)
+
+
 def quality_report(data: pd.DataFrame) -> dict:
     """返回阻止/警告/通过项；输入为已标准化且单位已声明的 DataFrame。"""
     blocked, warnings, passed = [], [], []
@@ -27,14 +46,14 @@ def quality_report(data: pd.DataFrame) -> dict:
             ))
         nonmonotonic_source_times = max(
             int(data.attrs.get("nonmonotonic_time_count", 0)),
-            int(pd.to_numeric(data["time_h"], errors="coerce").diff().lt(0).sum()),
+            int(_numeric_series(data["time_h"]).diff().lt(0).sum()),
         )
         if nonmonotonic_source_times:
             warnings.append((
                 f"原始 CSV 有 {nonmonotonic_source_times} 处时间倒序",
                 "核对采样记录；标准化副本已按时间排序，不会改写原文件。",
             ))
-        time = pd.to_numeric(data["time_h"], errors="coerce")
+        time = _numeric_series(data["time_h"])
         finite_time = time.map(lambda value: isfinite(float(value)) if pd.notna(value) else False)
         if time.isna().any() or not finite_time.all() or (time < 0).any():
             blocked.append(("时间包含缺失、非有限或负值", "使用从实验起点开始的有限、非负小时数；不要用 Inf 表示未测量。"))
@@ -65,8 +84,12 @@ def quality_report(data: pd.DataFrame) -> dict:
                 f"{FIELD_LABELS[field]}包含布尔值",
                 "测量指标必须使用带正确单位的数值；True/False 不会作为 0/1 测量值接受。",
             ))
-        values = pd.to_numeric(raw_values, errors="coerce")
-        direct_invalid = raw_values.notna() & values.isna() & ~raw_values.astype(str).str.strip().str.lower().isin(explicit_missing_tokens)
+        values = _numeric_series(raw_values)
+        explicit_missing = raw_values.map(
+            lambda value: isinstance(value, str)
+            and value.strip().lower() in explicit_missing_tokens
+        )
+        direct_invalid = raw_values.notna() & values.isna() & ~explicit_missing
         invalid_count = max(int(invalid_numeric_counts.get(field, 0)), int(direct_invalid.sum()))
         if invalid_count:
             blocked.append((
@@ -81,11 +104,11 @@ def quality_report(data: pd.DataFrame) -> dict:
         missing_count = int(values.isna().sum())
         if missing_count:
             warnings.append((f"{FIELD_LABELS[field]}存在缺失值（{missing_count} 个）", "确认空值确为未测量；不要用 0 或 Inf 代替缺失。"))
-    if "viability_percent" in data and (pd.to_numeric(data["viability_percent"], errors="coerce").dropna() > 100).any():
+    if "viability_percent" in data and (_numeric_series(data["viability_percent"]).dropna() > 100).any():
         blocked.append(("存活率超过 100%", "请确认使用百分比而非比例，并核对导入单位。"))
-    if "oxygen_percent" in data and (pd.to_numeric(data["oxygen_percent"], errors="coerce").dropna() > 100).any():
+    if "oxygen_percent" in data and (_numeric_series(data["oxygen_percent"]).dropna() > 100).any():
         blocked.append(("氧百分比超过 100%", "核对该列是否实际使用饱和度、分压或其他单位。"))
-    elif "oxygen_percent" in data and (pd.to_numeric(data["oxygen_percent"], errors="coerce").dropna() > 21).any():
+    elif "oxygen_percent" in data and (_numeric_series(data["oxygen_percent"]).dropna() > 21).any():
         blocked.append((
             "氧代理值超过模型 0–21% 范围",
             "本列对应培养模型的局部氧可用性代理；溶氧饱和度 %、分压或培养箱设定值不能直接当作相同观测量。请核对来源与换算依据。",
@@ -96,7 +119,7 @@ def quality_report(data: pd.DataFrame) -> dict:
             "即使在 0–21% 范围内，模型氧代理也不自动等同于实测溶氧、氧分压或培养箱头空间氧。",
         ))
     if "pH" in data:
-        observed_ph = pd.to_numeric(data["pH"], errors="coerce").dropna()
+        observed_ph = _numeric_series(data["pH"]).dropna()
         if (observed_ph > 14).any():
             blocked.append(("pH 超出 0–14 的常规标度", "核对 CSV 中的酸碱指标单位与列映射。"))
         elif ((observed_ph < 6.2) | (observed_ph > 8.0)).any():
@@ -107,7 +130,7 @@ def quality_report(data: pd.DataFrame) -> dict:
     available = [
         field for field in ("viable_cells", "glucose_mM", "lactate_mM")
         if field in data and field not in boolean_fields
-        and pd.to_numeric(data[field], errors="coerce").notna().sum() >= 2
+        and _numeric_series(data[field]).notna().sum() >= 2
     ]
     if not available: blocked.append(("缺少可校准指标", "至少提供活细胞数、葡萄糖或乳酸中的一个，且有两个时间点。"))
     else: passed.append(("可校准指标", "、".join(FIELD_LABELS[f] for f in available)))

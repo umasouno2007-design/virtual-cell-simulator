@@ -33,6 +33,16 @@ class DataQualityTests(unittest.TestCase):
         bad_value = quality_report(pd.DataFrame({"time_h": [0, 24, 48], "glucose_mM": [10, float("inf"), 8]}))
         self.assertTrue(any("无穷值" in item[0] for item in bad_value["blocked"]))
 
+    def test_unrepresentably_large_object_integer_is_reported_not_raised(self):
+        huge = 10**10000
+        data = pd.DataFrame({
+            "time_h": pd.Series([0, 24, 48], dtype=object),
+            "viable_cells": pd.Series([100, huge, 180], dtype=object),
+        })
+        report = quality_report(data)
+        self.assertFalse(report["is_minimum_model_ready"])
+        self.assertTrue(any("无穷值" in issue for issue, _ in report["blocked"]))
+
     def test_boolean_time_and_measurement_are_not_accepted_as_numeric_zero_or_one(self):
         boolean_time = quality_report(pd.DataFrame({
             "time_h": [False, True, False], "viable_cells": [100, 120, 140],
