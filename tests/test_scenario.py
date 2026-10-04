@@ -199,3 +199,24 @@ class ScenarioTests(unittest.TestCase):
         payload["events"] = [{"at_time_h": 12, "action": "补充葡萄糖", "value": True}]
         with self.assertRaisesRegex(ValueError, "缺少有效的执行时间或操作量"):
             import_scenario(payload)
+
+    def test_unrepresentably_large_json_numbers_are_rejected_as_invalid_scenario_fields(self):
+        huge = 10**10000
+        cases = (
+            ("run", "duration_h", "培养体积、面积、总时长和步长"),
+            ("parameters", "growth_scale", "模型参数必须为数值"),
+            ("environment", "glucose_mM", "环境字段 glucose_mM 必须为数值"),
+        )
+        for section, field, message in cases:
+            with self.subTest(section=section, field=field):
+                payload = export_scenario(CellCulture("a549"))
+                payload[section][field] = huge
+                with self.assertRaisesRegex(ValueError, message):
+                    import_scenario(payload)
+
+        payload = export_scenario(CellCulture("a549"), events=[{
+            "action": "补充葡萄糖", "at_time_h": 1.0, "value": 1.0,
+        }])
+        payload["events"][0]["at_time_h"] = huge
+        with self.assertRaisesRegex(ValueError, "缺少有效的执行时间或操作量"):
+            import_scenario(payload)

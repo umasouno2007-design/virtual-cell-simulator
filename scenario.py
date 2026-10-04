@@ -39,7 +39,10 @@ def _scenario_float(value):
 
     if isinstance(value, bool):
         raise TypeError("布尔值不是数值输入。")
-    return float(value)
+    try:
+        return float(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("数值无法转换为有限浮点数。") from None
 
 def export_scenario(
     cell: CellCulture, *, duration_h: float = 72, dt_h: float = 1,
