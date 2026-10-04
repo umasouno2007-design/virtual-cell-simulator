@@ -12,6 +12,7 @@ from intracellular import IntracellularState
 from json_payload import decode_json_object
 from microcolony import MicrocolonyState, RepresentativeCell
 from microenvironment import MicroenvironmentState
+from numeric_utils import is_boolean_scalar
 from version import MODEL_VERSION
 
 SINGLE_SCHEMA = "e-cell-single-cell/v1"
@@ -345,12 +346,15 @@ def _check_common(data: dict, schema: str) -> None:
 
 
 def _finite(value: Any, name: str) -> float:
-    if isinstance(value, bool):
+    if is_boolean_scalar(value):
         raise ValueError(f"{name} 必须是数值，不能是布尔值。")
-    value = float(value)
-    if not isfinite(value):
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{name} 必须是有限数值。") from None
+    if not isfinite(numeric):
         raise ValueError(f"{name} 必须是有限数值。")
-    return value
+    return numeric
 
 
 def _validate_history_environment(row: dict, label: str) -> None:

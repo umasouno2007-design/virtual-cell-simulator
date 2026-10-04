@@ -3,6 +3,8 @@
 import copy
 import unittest
 
+import pandas as pd
+
 from cell_scenario import (
     add_traceability_fields,
     environment_change_event,
@@ -314,6 +316,17 @@ class CellScenarioTests(unittest.TestCase):
         payload = export_single_cell_scenario(MicroenvironmentState(), IntracellularState(), [], [])
         payload["environment"]["glucose_mm"] = True
         with self.assertRaisesRegex(ValueError, "不能是布尔值"):
+            import_single_cell_scenario(payload)
+
+    def test_scenario_numeric_parser_rejects_pandas_boolean_and_overflow(self):
+        payload = export_single_cell_scenario(MicroenvironmentState(), IntracellularState(), [], [])
+        payload["environment"]["glucose_mm"] = pd.Series([True]).iloc[0]
+        with self.assertRaisesRegex(ValueError, "glucose_mm.*不能是布尔值"):
+            import_single_cell_scenario(payload)
+
+        payload = export_single_cell_scenario(MicroenvironmentState(), IntracellularState(), [], [])
+        payload["environment"]["glucose_mm"] = 10**10000
+        with self.assertRaisesRegex(ValueError, "glucose_mm.*有限数值"):
             import_single_cell_scenario(payload)
         payload = export_single_cell_scenario(MicroenvironmentState(), IntracellularState(), [], [])
         payload["current_state"]["atp_percent"] = False
