@@ -246,7 +246,14 @@ def residual_summary(comparison: pd.DataFrame) -> pd.DataFrame:
         residual_column = f"{field}_residual"
         if residual_column not in comparison:
             continue
-        residual = pd.to_numeric(comparison[residual_column], errors="coerce").dropna()
+        raw_residual = comparison[residual_column]
+        try:
+            numeric_residual = pd.to_numeric(raw_residual, errors="coerce")
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(f"{label}残差必须为数值或缺失值。") from None
+        if (raw_residual.notna() & numeric_residual.isna()).any():
+            raise ValueError(f"{label}残差包含无法解析的非空值。")
+        residual = numeric_residual.dropna()
         if not residual.empty:
             values = [float(value) for value in residual]
             if not all(isfinite(value) for value in values):

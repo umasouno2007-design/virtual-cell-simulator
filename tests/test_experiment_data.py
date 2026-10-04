@@ -152,6 +152,10 @@ class ExperimentDataTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "非有限值"):
             residual_summary(pd.DataFrame({"viable_cells_residual": [float("inf")]}))
 
+    def test_error_summary_rejects_unparseable_nonempty_residuals(self) -> None:
+        with self.assertRaisesRegex(ValueError, "无法解析"):
+            residual_summary(pd.DataFrame({"viable_cells_residual": [0.5, "bad"]}))
+
     def test_comparison_uses_last_same_time_simulation_snapshot(self) -> None:
         simulation = pd.DataFrame({
             "time_h": [1.0, 0.0, 1.0, 2.0],
