@@ -49,10 +49,20 @@ class MicrocolonyState:
     def __post_init__(self) -> None:
         if type(self.cell_count) is not int or not 3 <= self.cell_count <= 50:
             raise ValueError("代表性细胞数量必须是 3–50 的整数。")
+        if type(self.communication_enabled) is not bool:
+            raise ValueError("communication_enabled 必须是布尔值。")
+        if not isinstance(self.cells, list) or not isinstance(self.history, list):
+            raise ValueError("微群体 cells 和 history 必须是列表。")
         if not self.cells:
             self.cells = self._make_cells(self.cell_count)
+        if len(self.cells) != self.cell_count or not all(
+            isinstance(cell, RepresentativeCell) for cell in self.cells
+        ):
+            raise ValueError("微群体细胞列表必须包含与 cell_count 一致的代表性细胞对象。")
         if not self.history:
             self._record_snapshot()
+        if not self.finite():
+            raise ValueError("初始微型细胞群包含无效状态；请检查时间、细胞状态和布局输入。")
 
     @staticmethod
     def _make_cells(count: int) -> list[RepresentativeCell]:

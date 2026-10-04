@@ -12,6 +12,17 @@ from microenvironment import MicroenvironmentState
 
 
 class MicroenvironmentAndMicrocolonyTests(unittest.TestCase):
+    def test_microcolony_constructor_rejects_invalid_switch_and_container_types(self) -> None:
+        for kwargs, message in (
+            ({"communication_enabled": 1}, "communication_enabled 必须是布尔值"),
+            ({"cells": ()}, "cells 和 history 必须是列表"),
+            ({"history": ()}, "cells 和 history 必须是列表"),
+            ({"cells": [object()]}, "必须包含与 cell_count 一致的代表性细胞对象"),
+        ):
+            with self.subTest(kwargs=kwargs):
+                with self.assertRaisesRegex(ValueError, message):
+                    MicrocolonyState(cell_count=3, **kwargs)
+
     def test_microcolony_step_rolls_back_every_cell_and_history_on_partial_failure(self) -> None:
         colony = MicrocolonyState(cell_count=4, communication_enabled=True)
         environment = MicroenvironmentState(local_oxygen_availability=0.5, glucose_mm=3.0)
