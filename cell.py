@@ -189,7 +189,7 @@ class CellCulture:
             raise ValueError("培养单步时长必须是 0–6 h 内的有限数值。")
         try:
             dt_h = float(dt_h)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             raise ValueError("培养单步时长必须是 0–6 h 内的有限数值。") from None
         if not isfinite(dt_h) or dt_h < 0.0 or dt_h > 6.0:
             raise ValueError("培养单步时长必须是 0–6 h 内的有限数值。")

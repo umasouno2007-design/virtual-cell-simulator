@@ -10,6 +10,13 @@ from microenvironment import MicroenvironmentState
 
 
 class IntracellularStateTestCase(unittest.TestCase):
+    def test_unrepresentably_large_duration_is_rejected_as_user_input(self) -> None:
+        state = IntracellularState()
+        before = state.snapshot()
+        with self.assertRaisesRegex(ValueError, "单细胞单步时长"):
+            state.step(MicroenvironmentState(), 10**10000)
+        self.assertEqual(state.snapshot(), before)
+
     def test_unrepresentably_large_index_is_rejected_without_state_changes(self) -> None:
         state = IntracellularState(atp_percent=10**10000)
         before = state.snapshot()

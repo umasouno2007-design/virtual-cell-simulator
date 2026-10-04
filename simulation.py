@@ -70,7 +70,7 @@ def run_steps(
         raise ValueError("每步时长必须是 0–6 h 内的有限正数。")
     try:
         step_hours = float(dt_h)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise ValueError("每步时长必须是 0–6 h 内的有限正数。") from None
     if not isfinite(step_hours) or not 0 < step_hours <= 6.0:
         raise ValueError("每步时长必须是 0–6 h 内的有限正数。")

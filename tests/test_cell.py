@@ -245,6 +245,20 @@ class CellCultureTestCase(unittest.TestCase):
             cell.step(0.25)
         self.assertEqual(cell.snapshot(), before)
 
+    def test_unrepresentably_large_duration_is_rejected_as_user_input(self) -> None:
+        cell = CellCulture("hela")
+        before = cell.snapshot()
+        with self.assertRaisesRegex(ValueError, "培养单步时长"):
+            cell.step(10**10000)
+        self.assertEqual(cell.snapshot(), before)
+
+        cell, history = new_simulation("a549")
+        before = cell.snapshot()
+        with self.assertRaisesRegex(ValueError, "每步时长"):
+            run_steps(cell, history, steps=1, dt_h=10**10000)
+        self.assertEqual(cell.snapshot(), before)
+        self.assertEqual(len(history), 1)
+
     def test_every_model_parameter_rejects_invalid_types_and_nonfinite_values_atomically(self) -> None:
         for model_field in fields(ModelParameters):
             for invalid in (True, float("nan"), float("inf"), "invalid"):

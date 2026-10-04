@@ -10,6 +10,13 @@ from simulation import new_simulation
 
 
 class CellCommunicationTests(unittest.TestCase):
+    def test_unrepresentably_large_duration_is_rejected_as_user_input(self) -> None:
+        state = CellCommunicationState()
+        before = state.snapshot()
+        with self.assertRaisesRegex(ValueError, "通信层时间步长"):
+            state.step(IntracellularState(), 10**10000)
+        self.assertEqual(state.snapshot(), before)
+
     def test_unrepresentably_large_index_is_rejected_without_state_changes(self) -> None:
         state = CellCommunicationState(stress_signal_index=10**10000)
         before = state.snapshot()

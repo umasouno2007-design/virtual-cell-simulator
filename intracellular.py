@@ -34,7 +34,7 @@ def _teaching_intensity(value: float) -> float:
         raise ValueError("教学干预强度必须是有限非负数。")
     try:
         intensity = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise ValueError("教学干预强度必须是有限非负数。") from None
     if not isfinite(intensity) or intensity < 0:
         raise ValueError("教学干预强度必须是有限非负数。")
@@ -104,7 +104,7 @@ class IntracellularState:
             raise ValueError("单细胞单步时长必须是 0–6 h 内的有限数值。")
         try:
             dt_h = float(dt_h)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             raise ValueError("单细胞单步时长必须是 0–6 h 内的有限数值。") from None
         if not isfinite(dt_h) or dt_h < 0.0:
             raise ValueError("单细胞单步时长必须是 0–6 h 内的有限数值。")
