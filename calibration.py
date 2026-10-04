@@ -69,7 +69,7 @@ def replay_from_initial(template: CellCulture, initial: dict, target_times, grow
     history = [cell.snapshot()]
     try:
         targets = [float(value) for value in target_times]
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise ValueError("校准重演时间必须是有限小时数。") from None
     if any(not isfinite(target) or target < cell.time_h for target in targets):
         raise ValueError("校准重演时间必须是有限数值，且不能早于起始时刻。")
@@ -93,7 +93,10 @@ def _score(comparison: pd.DataFrame, weights: dict[str, float] | None = None) ->
         residual = f"{field}_residual"
         if observed not in comparison or residual not in comparison:
             continue
-        weight = float((weights or {}).get(field, 1.0))
+        try:
+            weight = float((weights or {}).get(field, 1.0))
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError("校准指标权重必须是有限的非负数。") from None
         if not isfinite(weight) or weight < 0:
             raise ValueError("校准指标权重必须是有限的非负数。")
         if weight == 0:
@@ -132,7 +135,7 @@ def fit_growth_and_uptake(
         if any(isinstance(value, bool) for value in (weights or {}).values()):
             raise TypeError("布尔权重不是数值输入。")
         resolved_weights = {field: float((weights or {}).get(field, 1.0)) for field in FIT_FIELDS}
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise ValueError("校准指标权重必须为数值。") from None
     if any(not isfinite(value) or value < 0 for value in resolved_weights.values()):
         raise ValueError("校准指标权重必须是有限的非负数。")
@@ -172,7 +175,7 @@ def fit_growth_and_uptake(
             continue
         try:
             event_time = float(event.get("time_h", -1))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             raise ValueError("培养干预记录的模拟时间无效；无法确认校准重演条件。") from None
         if not isfinite(event_time):
             raise ValueError("培养干预记录的模拟时间无效；无法确认校准重演条件。")

@@ -9,6 +9,28 @@ from cell import CellCulture
 
 
 class CalibrationTestCase(unittest.TestCase):
+    def test_oversized_time_and_weight_inputs_are_rejected_before_search(self) -> None:
+        cell = CellCulture("a549")
+        initial = cell.snapshot()
+        huge = 10**10000
+        with self.assertRaisesRegex(ValueError, "校准重演时间"):
+            replay_from_initial(cell, initial, [huge], 1.0, 1.0)
+
+        measurements = pd.DataFrame({
+            "time_h": [0.0, 24.0], "viable_cells": [100.0, 120.0],
+        })
+        with self.assertRaisesRegex(ValueError, "校准指标权重"):
+            fit_growth_and_uptake(
+                cell, [initial], measurements, {"viable_cells": huge},
+            )
+
+        comparison = pd.DataFrame({
+            "viable_cells_observed": [100.0, 120.0],
+            "viable_cells_residual": [0.0, 1.0],
+        })
+        with self.assertRaisesRegex(ValueError, "校准指标权重"):
+            _score(comparison, {"viable_cells": huge})
+
     def test_fit_uses_measurements_and_returns_bounded_parameters(self) -> None:
         cell = CellCulture("hela")
         initial = cell.snapshot()
