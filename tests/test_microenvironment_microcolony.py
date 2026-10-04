@@ -144,6 +144,13 @@ class MicroenvironmentAndMicrocolonyTests(unittest.TestCase):
         self.assertEqual(state.time_h, 0.0)
         self.assertEqual(colony.time_h, 0.0)
 
+    def test_zero_duration_colony_step_still_validates_environment(self) -> None:
+        colony = MicrocolonyState(cell_count=3)
+        before = copy.deepcopy(colony.history)
+        with self.assertRaisesRegex(ValueError, "有效的 MicroenvironmentState"):
+            colony.step(object(), 0.0)
+        self.assertEqual(colony.history, before)
+
     def test_colony_clock_precision_loss_is_rejected_before_any_cell_changes(self) -> None:
         colony = MicrocolonyState(cell_count=3)
         colony.time_h = 1e20

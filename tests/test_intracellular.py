@@ -10,6 +10,14 @@ from microenvironment import MicroenvironmentState
 
 
 class IntracellularStateTestCase(unittest.TestCase):
+    def test_zero_duration_still_validates_state_and_environment(self) -> None:
+        with self.assertRaisesRegex(ValueError, "有效的 CellCulture"):
+            IntracellularState().step(object(), 0.0)
+
+        invalid_state = IntracellularState(atp_percent=float("nan"))
+        with self.assertRaisesRegex(ValueError, "越界或非有限"):
+            invalid_state.step(MicroenvironmentState(), 0.0)
+
     def test_failed_later_substep_rolls_back_intracellular_state(self) -> None:
         class FailingEnvironment(MicroenvironmentState):
             calls = 0

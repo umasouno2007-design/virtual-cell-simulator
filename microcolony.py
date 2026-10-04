@@ -147,6 +147,9 @@ class MicrocolonyState:
         if dt_h > 6.0:
             raise ValueError("微群体单步时长不能超过 6 h；请分步推进。")
         if dt_h == 0.0:
+            if not isinstance(environment, MicroenvironmentState):
+                raise ValueError("微群体推进需要有效的 MicroenvironmentState 对象。")
+            environment.normalized_copy()
             return
         next_time_h = checked_time_advance(self.time_h, dt_h)
         if dt_h > MAX_INTERNAL_STEP_H:

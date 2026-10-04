@@ -124,10 +124,14 @@ class IntracellularState:
             raise ValueError("单细胞单步时长必须是 0–6 h 内的有限数值。")
         if dt_h > 6.0:
             raise ValueError("单细胞单步时长不能超过 6 h；请分步推进。")
-        if dt_h == 0.0:
-            return
         if not self.finite():
             raise ValueError("单细胞状态包含越界或非有限值；请重置或载入有效状态。")
+        if dt_h == 0.0:
+            if isinstance(environment, MicroenvironmentState):
+                environment.normalized_copy()
+            else:
+                MicroenvironmentState.from_culture(environment)
+            return
         next_time_h = checked_time_advance(self.time_h, dt_h)
         if dt_h > MAX_INTERNAL_STEP_H:
             remaining_h = dt_h
