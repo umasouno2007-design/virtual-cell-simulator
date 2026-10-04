@@ -14,6 +14,15 @@ class ExperimentDataTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "对齐结果表格"):
             residual_summary([])
 
+    def test_alignment_and_residual_apis_reject_duplicate_columns(self) -> None:
+        simulation = pd.DataFrame([[0, 100], [24, 120]], columns=["time_h", "viable_cells"])
+        observed = pd.DataFrame([[0, 100, 100], [24, 110, 120]], columns=["time_h", "viable_cells", "viable_cells"])
+        with self.assertRaisesRegex(ValueError, "唯一列名"):
+            comparison_frame(simulation, observed)
+        comparison = pd.DataFrame([[0, 1, 2]], columns=["time_h", "viable_cells_residual", "viable_cells_residual"])
+        with self.assertRaisesRegex(ValueError, "唯一列名"):
+            residual_summary(comparison)
+
     def test_chinese_headers_are_standardized(self) -> None:
         source = "时间,活细胞数,葡萄糖,pH\n0,100000,5.5,7.4\n24,180000,3.2,7.2\n".encode("utf-8-sig")
         data, notes = standardize_measurements(source)

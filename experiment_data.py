@@ -192,6 +192,8 @@ def comparison_frame(simulation: pd.DataFrame, measurements: pd.DataFrame) -> pd
 
     if not isinstance(simulation, pd.DataFrame) or not isinstance(measurements, pd.DataFrame):
         raise ValueError("模拟—实测对齐需要两个 Pandas 表格。")
+    if simulation.columns.has_duplicates or measurements.columns.has_duplicates:
+        raise ValueError("模拟和实测表格必须使用唯一列名；请先核对重复表头。")
     if len(measurements) > MAX_CSV_ROWS:
         raise ValueError(f"模拟—实测对齐最多接受 {MAX_CSV_ROWS:,} 行观测；请分批分析。")
     if len(simulation) > MAX_SIMULATION_ALIGNMENT_ROWS:
@@ -265,6 +267,8 @@ def residual_summary(comparison: pd.DataFrame) -> pd.DataFrame:
 
     if not isinstance(comparison, pd.DataFrame):
         raise ValueError("残差汇总需要模拟—实测对齐结果表格。")
+    if comparison.columns.has_duplicates:
+        raise ValueError("残差表格必须使用唯一列名；请先核对重复表头。")
     if len(comparison) > MAX_CSV_ROWS:
         raise ValueError(f"残差汇总最多接受 {MAX_CSV_ROWS:,} 行观测；请分批分析。")
     rows = []

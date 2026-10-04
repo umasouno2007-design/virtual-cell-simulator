@@ -12,6 +12,12 @@ class DataQualityTests(unittest.TestCase):
         self.assertFalse(report["is_minimum_model_ready"])
         self.assertTrue(any("超过当前解析上限" in issue for issue, _ in report["blocked"]))
 
+    def test_duplicate_dataframe_columns_block_quality_check(self):
+        data = pd.DataFrame([[0, 0, 1], [24, 24, 2]], columns=["time_h", "time_h", "viable_cells"])
+        report = quality_report(data)
+        self.assertFalse(report["is_minimum_model_ready"])
+        self.assertTrue(any("重复列名" in issue for issue, _ in report["blocked"]))
+
     def test_quality_apis_reject_wrong_container_types_with_domain_errors(self):
         from data_quality import numeric_series
 

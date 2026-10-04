@@ -56,6 +56,16 @@ def quality_report(data: pd.DataFrame) -> dict:
             "is_minimum_model_ready": False,
             "disclaimer": "通过仅代表格式和最低建模条件，不代表实验质量认证或生物学结论有效。",
         }
+    if data.columns.has_duplicates:
+        return {
+            "model_version": MODEL_VERSION,
+            "imported_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "blocked": [("表格包含重复列名", "请为每个测量指标保留唯一列名后重新导入或构造分析表。")],
+            "warnings": [],
+            "passed": [],
+            "is_minimum_model_ready": False,
+            "disclaimer": "通过仅代表格式和最低建模条件，不代表实验质量认证或生物学结论有效。",
+        }
     blocked, warnings, passed = [], [], []
     invalid_metadata = False
 
