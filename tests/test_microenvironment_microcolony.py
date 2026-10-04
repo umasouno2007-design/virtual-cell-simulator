@@ -159,6 +159,19 @@ class MicroenvironmentAndMicrocolonyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "微型细胞群包含越界或非有限状态"):
             colony.step(MicroenvironmentState(), 1.0)
 
+    def test_finite_colony_rejects_boolean_or_text_cell_numeric_fields(self) -> None:
+        for field, invalid in (("x", True), ("y", "1"), ("baseline_offset", False)):
+            colony = MicrocolonyState(cell_count=3)
+            setattr(colony.cells[0], field, invalid)
+            with self.subTest(field=field, value=invalid):
+                self.assertFalse(colony.finite())
+                with self.assertRaisesRegex(ValueError, "微型细胞群包含越界或非有限状态"):
+                    colony.step(MicroenvironmentState(), 1.0)
+
+        colony = MicrocolonyState(cell_count=3)
+        colony.cells[0].state.atp_percent = True
+        self.assertFalse(colony.finite())
+
     def test_colony_clock_precision_loss_is_rejected_before_any_cell_changes(self) -> None:
         colony = MicrocolonyState(cell_count=3)
         colony.time_h = 1e20

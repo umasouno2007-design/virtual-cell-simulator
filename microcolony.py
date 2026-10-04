@@ -326,6 +326,12 @@ class MicrocolonyState:
             for cell in self.cells:
                 if not isinstance(cell, RepresentativeCell) or not isinstance(cell.state, IntracellularState):
                     return False
+                position_values = (cell.x, cell.y, cell.baseline_offset, cell.local_signal_index)
+                if any(
+                    is_boolean_scalar(value) or not isinstance(value, (int, float))
+                    for value in position_values
+                ) or not cell.state.finite():
+                    return False
                 if type(cell.cell_id) is not int or not 1 <= cell.cell_id <= 50 or cell.cell_id in seen_ids:
                     return False
                 seen_ids.add(cell.cell_id)
