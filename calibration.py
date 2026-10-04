@@ -257,6 +257,8 @@ def fit_growth_and_uptake(
     for row in model_history:
         if not isinstance(row, dict) or row.get("cell_type") != template.profile_key or row.get("model_version") != MODEL_VERSION:
             raise ValueError("模拟历史含不同细胞系或模型版本；不能混用为校准起点。")
+        if is_boolean_scalar(row.get("time_h")):
+            raise ValueError("模拟历史时间不能使用布尔值；True/False 不能作为 1/0 小时使用。")
         try:
             model_time = float(row["time_h"])
         except (KeyError, TypeError, ValueError, OverflowError):
@@ -281,6 +283,8 @@ def fit_growth_and_uptake(
         name = str(event.get("event", ""))
         if name not in _CULTURE_INTERVENTIONS:
             continue
+        if is_boolean_scalar(event.get("time_h", -1)):
+            raise ValueError("培养干预记录的模拟时间无效；不能使用布尔值代替小时数。")
         try:
             event_time = float(event.get("time_h", -1))
         except (TypeError, ValueError, OverflowError):

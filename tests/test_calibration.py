@@ -33,6 +33,24 @@ class CalibrationTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "校准时间列不能包含布尔值"):
             fit_with_temporal_holdout(cell, [cell.snapshot()], measurements)
 
+    def test_grid_search_rejects_boolean_model_and_intervention_times(self) -> None:
+        cell = CellCulture("hela")
+        initial = cell.snapshot()
+        later = dict(initial, time_h=1.0)
+        measurements = pd.DataFrame({
+            "time_h": [0.0, 1.0], "viable_cells": [initial["viable_cells"], initial["viable_cells"]],
+        })
+
+        boolean_history = [dict(initial, time_h=True), later]
+        with self.assertRaisesRegex(ValueError, "模拟历史时间不能使用布尔值"):
+            fit_growth_and_uptake(cell, boolean_history, measurements)
+
+        with self.assertRaisesRegex(ValueError, "干预记录的模拟时间无效"):
+            fit_growth_and_uptake(
+                cell, [initial, later], measurements,
+                events=[{"event": "全量换液", "time_h": True}],
+            )
+
     def test_oversized_observation_is_reported_as_quality_error_not_overflow(self) -> None:
         cell = CellCulture("hela")
         huge = 10**10000
