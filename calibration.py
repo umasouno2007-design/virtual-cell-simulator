@@ -33,6 +33,15 @@ _SNAPSHOT_FIELDS = {
     "CO2_percent": "co2_percent", "osmolality_mOsm_kg": "osmolality_mosm_kg",
     "drug_uM": "drug_um", "energy_index": "energy_index",
 }
+_REPLAY_INITIAL_BOUNDS = {
+    "time_h": (0.0, 1e7), "viable_cells": (0.0, None), "dead_cells": (0.0, None),
+    "glucose_mM": (0.0, None), "glutamine_mM": (0.0, None), "lactate_mM": (0.0, None),
+    "oxygen_percent": (0.0, 21.0), "oxygen_setpoint_percent": (0.0, 21.0),
+    "pH": (6.2, 8.0), "temperature_C": (0.0, 50.0), "CO2_percent": (0.0, 100.0),
+    "osmolality_mOsm_kg": (0.0, 1000.0), "drug_uM": (0.0, None),
+    "energy_index": (0.0, 100.0), "growth_rate_per_h": (0.0, None),
+    "death_rate_per_h": (0.0, None),
+}
 
 
 @dataclass
@@ -85,6 +94,7 @@ def replay_from_initial(template: CellCulture, initial: dict, target_times, grow
         raise ValueError("校准重演起点的细胞系与当前模板不一致；请核对实验来源。")
     if initial.get("model_version") != MODEL_VERSION:
         raise ValueError("校准重演起点的模型版本不一致；不能混合不同版本结果。")
+    initial = dict(initial)
     for source in _SNAPSHOT_FIELDS:
         if source not in initial:
             continue
@@ -97,6 +107,10 @@ def replay_from_initial(template: CellCulture, initial: dict, target_times, grow
             raise ValueError(f"校准重演起点字段 {source} 必须是有限数值。") from None
         if not isfinite(value):
             raise ValueError(f"校准重演起点字段 {source} 必须是有限数值。")
+        low, high = _REPLAY_INITIAL_BOUNDS[source]
+        if value < low or (high is not None and value > high):
+            raise ValueError(f"校准重演起点字段 {source} 超出当前培养模型范围。")
+        initial[source] = value
     cell = _make_cell(
         template, initial, resolved_scales["growth_scale"], resolved_scales["uptake_scale"],
     )
