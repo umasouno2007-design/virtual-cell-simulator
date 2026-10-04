@@ -500,6 +500,12 @@ class CellCultureTestCase(unittest.TestCase):
         modifiers = cell.growth_modifiers()
         self.assertTrue(all(math.isfinite(value) and 0 <= value <= 1 for value in modifiers.values()))
 
+    def test_direct_growth_modifiers_reject_boolean_environment_values(self) -> None:
+        cell = CellCulture("hela")
+        cell.glucose_mm = True
+        with self.assertRaisesRegex(ValueError, "培养状态 glucose_mm 不能使用布尔值"):
+            cell.growth_modifiers()
+
 
 if __name__ == "__main__":
     unittest.main()

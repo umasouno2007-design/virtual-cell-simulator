@@ -140,6 +140,12 @@ class CellCulture:
 
         p = self.parameters
         self._validate_finite_parameters()
+        for name in (
+            "glucose_mm", "glutamine_mm", "oxygen_percent", "ph", "temperature_c",
+            "osmolality_mosm_kg", "viable_cells", "lactate_mm", "drug_um",
+        ):
+            if is_boolean_scalar(getattr(self, name)):
+                raise ValueError(f"培养状态 {name} 不能使用布尔值代替数值。")
         glucose_mm = _finite_nonnegative(self.glucose_mm)
         glutamine_mm = _finite_nonnegative(self.glutamine_mm)
         oxygen_percent = _finite_nonnegative(self.oxygen_percent)
