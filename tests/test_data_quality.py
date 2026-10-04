@@ -26,6 +26,14 @@ class DataQualityTests(unittest.TestCase):
         result = quality_report(data)
         self.assertTrue(any("重复" in item[0] for item in result["warnings"]))
 
+    def test_malformed_import_metadata_blocks_instead_of_raising(self):
+        data = pd.DataFrame({"time_h": [0, 24, 48], "viable_cells": [100, 120, 140]})
+        data.attrs["invalid_time_count"] = "one"
+        data.attrs["invalid_numeric_counts"] = ["invalid"]
+        report = quality_report(data)
+        self.assertFalse(report["is_minimum_model_ready"])
+        self.assertTrue(any("质量元数据无效" in issue for issue, _ in report["blocked"]))
+
     def test_non_finite_time_or_measurement_blocks_readiness(self):
         bad_time = quality_report(pd.DataFrame({"time_h": [0, float("inf")], "viable_cells": [1, 2]}))
         self.assertTrue(any("非有限" in item[0] for item in bad_time["blocked"]))

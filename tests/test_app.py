@@ -4,6 +4,11 @@ import unittest
 from pathlib import Path
 import time
 import json
+import os
+
+# Streamlit AppTest executes in worker threads; TkAgg may try to destroy GUI
+# objects from the wrong thread on Windows. Tests only inspect state, not windows.
+os.environ.setdefault("MPLBACKEND", "Agg")
 
 from calibration import CalibrationResult
 from cell import CellCulture

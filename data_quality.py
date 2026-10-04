@@ -30,6 +30,16 @@ def _numeric_series(values: pd.Series) -> pd.Series:
 def quality_report(data: pd.DataFrame) -> dict:
     """返回阻止/警告/通过项；输入为已标准化且单位已声明的 DataFrame。"""
     blocked, warnings, passed = [], [], []
+    invalid_metadata = False
+
+    def source_count(name: str) -> int:
+        nonlocal invalid_metadata
+        value = data.attrs.get(name, 0)
+        if type(value) is int and value >= 0:
+            return value
+        invalid_metadata = True
+        return 0
+
     if "time_h" not in data or data.empty:
         blocked.append(("缺少可用时间列", "提供至少两个数值 time_h 时间点。"))
     else:
@@ -38,14 +48,14 @@ def quality_report(data: pd.DataFrame) -> dict:
         )
         if time_is_boolean.any():
             blocked.append(("时间列包含布尔值", "时间必须是以小时表示的数值；True/False 不能作为 0/1 小时使用。"))
-        invalid_source_times = int(data.attrs.get("invalid_time_count", 0))
+        invalid_source_times = source_count("invalid_time_count")
         if invalid_source_times:
             blocked.append((
                 f"原始 CSV 有 {invalid_source_times} 行时间缺失或无法解析",
                 "修正原始文件的时间列后重新导入；标准化副本不会用于对齐或校准。",
             ))
         nonmonotonic_source_times = max(
-            int(data.attrs.get("nonmonotonic_time_count", 0)),
+            source_count("nonmonotonic_time_count"),
             int(_numeric_series(data["time_h"]).diff().lt(0).sum()),
         )
         if nonmonotonic_source_times:
@@ -62,13 +72,23 @@ def quality_report(data: pd.DataFrame) -> dict:
                 "缺少记录的实验起始时间点",
                 "确认模拟起点与实测时间原点一致；没有 0 h 观测时，初始条件无法由该 CSV 单独核对。",
             ))
-        duplicate_count = int(data.attrs.get("duplicate_time_count", 0))
+        duplicate_count = source_count("duplicate_time_count")
         if time.duplicated().any() or duplicate_count:
             warnings.append(("存在重复时间点", "保留原始记录；用于比较的标准化副本会采用同时间的最后一行。"))
         if len(data) < 3: warnings.append(("时间点少于 3", "可比较但不足以支持训练/留出划分。"))
         else: passed.append(("时间点数量", "至少有 3 个时间点。"))
     checked_fields = ("viable_cells", "viability_percent", "glucose_mM", "lactate_mM", "oxygen_percent", "pH")
     invalid_numeric_counts = data.attrs.get("invalid_numeric_counts", {})
+    if not isinstance(invalid_numeric_counts, dict):
+        invalid_numeric_counts = {}
+        invalid_metadata = True
+    elif any(
+        field not in FIELD_LABELS
+        or type(count) is not int or count < 0
+        for field, count in invalid_numeric_counts.items()
+    ):
+        invalid_numeric_counts = {}
+        invalid_metadata = True
     explicit_missing_tokens = {"", "na", "n/a", "null", "nan", "none"}
     boolean_fields: set[str] = set()
     for field in checked_fields:
@@ -90,7 +110,7 @@ def quality_report(data: pd.DataFrame) -> dict:
             and value.strip().lower() in explicit_missing_tokens
         )
         direct_invalid = raw_values.notna() & values.isna() & ~explicit_missing
-        invalid_count = max(int(invalid_numeric_counts.get(field, 0)), int(direct_invalid.sum()))
+        invalid_count = max(invalid_numeric_counts.get(field, 0), int(direct_invalid.sum()))
         if invalid_count:
             blocked.append((
                 f"{FIELD_LABELS[field]}有 {invalid_count} 个非空值无法解析为数值",
@@ -127,6 +147,11 @@ def quality_report(data: pd.DataFrame) -> dict:
                 "pH 超出当前培养模型 6.2–8.0 的状态范围",
                 "该测量可能有效，但现有模型会在范围边界裁剪 pH；请核对单位，并避免将此区间外数据用于当前模型对齐或校准。",
             ))
+    if invalid_metadata:
+        blocked.append((
+            "导入质量元数据无效",
+            "CSV 导入附带的原始解析计数格式不正确；请从原始文件重新导入，以免遗漏无法解析的行。",
+        ))
     available = [
         field for field in ("viable_cells", "glucose_mM", "lactate_mM")
         if field in data and field not in boolean_fields
