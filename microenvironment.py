@@ -39,6 +39,15 @@ class MicroenvironmentState:
     def normalized(self) -> "MicroenvironmentState":
         """原位裁剪此输入对象，供显式清洗配置时使用。"""
 
+        numeric_fields = (
+            "time_h", "local_oxygen_availability", "glucose_mm",
+            "glucose_reference_mm", "lactate_mm", "ph", "temperature_c",
+            "drug_um", "local_confluence_percent", "doubling_time_h",
+            "drug_ic50_um",
+        )
+        if any(isinstance(getattr(self, name), bool) for name in numeric_fields):
+            raise ValueError("微环境数值不能使用布尔值代替；请提供带单位的数值。")
+
         try:
             time_h = float(self.time_h)
         except (TypeError, ValueError):

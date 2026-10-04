@@ -48,6 +48,30 @@ class MicroenvironmentAndMicrocolonyTests(unittest.TestCase):
         self.assertEqual(clean.glucose_mm, 0.0)
         self.assertEqual(clean.ph, 9.0)
 
+    def test_boolean_environment_values_are_rejected_without_partial_normalization(self) -> None:
+        numeric_fields = (
+            "time_h", "local_oxygen_availability", "glucose_mm",
+            "glucose_reference_mm", "lactate_mm", "ph", "temperature_c",
+            "drug_um", "local_confluence_percent", "doubling_time_h",
+            "drug_ic50_um",
+        )
+        for field in numeric_fields:
+            with self.subTest(field=field):
+                source = MicroenvironmentState(glucose_mm=math.nan)
+                setattr(source, field, True)
+                before = dict(source.__dict__)
+                with self.assertRaisesRegex(ValueError, "不能使用布尔值代替"):
+                    source.normalized()
+                self.assertEqual(source.__dict__, before)
+
+    def test_single_cell_rejects_boolean_environment_before_progress(self) -> None:
+        environment = MicroenvironmentState(glucose_mm=True)
+        state = IntracellularState()
+        before = state.snapshot()
+        with self.assertRaisesRegex(ValueError, "不能使用布尔值代替"):
+            state.step(environment, 0.25)
+        self.assertEqual(state.snapshot(), before)
+
     def test_single_cell_and_colony_steps_do_not_mutate_shared_environment(self) -> None:
         environment = MicroenvironmentState(glucose_mm=math.nan, ph=20.0)
         before = dict(environment.__dict__)
