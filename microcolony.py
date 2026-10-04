@@ -11,8 +11,8 @@ from dataclasses import dataclass, field
 from math import exp, isfinite
 
 from intracellular import MAX_INTERNAL_STEP_H, IntracellularState
-from microenvironment import MicroenvironmentState, checked_time_advance
-from numeric_utils import clamp_finite as _clamp
+from microenvironment import MicroenvironmentState
+from numeric_utils import checked_time_advance, clamp_finite as _clamp
 
 
 @dataclass

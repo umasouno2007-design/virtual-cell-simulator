@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from math import isfinite
 
+from numeric_utils import checked_time_advance
+
 
 def _bounded(value: float, low: float, high: float) -> float:
     try:
@@ -16,26 +18,6 @@ def _bounded(value: float, low: float, high: float) -> float:
         return max(low, min(high, numeric)) if isfinite(numeric) else low
     except (TypeError, ValueError):
         return low
-
-
-def checked_time_advance(current_h: float, delta_h: float) -> float:
-    """Validate and return the next model clock in hours.
-
-    Reject non-finite, negative, overflowing, or sub-resolution advances before a
-    model mutates state. A positive step must produce a strictly later float time.
-    """
-
-    try:
-        current = float(current_h)
-        delta = float(delta_h)
-    except (TypeError, ValueError, OverflowError):
-        raise ValueError("模拟时钟无法安全推进；请重置或载入有效状态。") from None
-    if not isfinite(current) or current < 0.0 or not isfinite(delta) or delta <= 0.0:
-        raise ValueError("模拟时钟无法安全推进；请重置或载入有效状态。")
-    next_time = current + delta
-    if not isfinite(next_time) or next_time <= current:
-        raise ValueError("模拟时钟无法安全推进；请重置或载入有效状态。")
-    return next_time
 
 
 @dataclass

@@ -13,8 +13,7 @@ from math import ceil, exp, isclose, isfinite, sqrt
 from typing import TYPE_CHECKING
 
 from intracellular import MAX_INTERNAL_STEP_H, IntracellularState
-from microenvironment import checked_time_advance
-from numeric_utils import clamp_finite as _clamp
+from numeric_utils import checked_time_advance, clamp_finite as _clamp
 
 if TYPE_CHECKING:
     from intracellular import IntracellularState

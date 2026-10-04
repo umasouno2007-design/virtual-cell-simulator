@@ -5,6 +5,7 @@ from math import exp, isfinite, log
 from typing import Dict
 
 from profiles import CellProfile, get_profile
+from numeric_utils import checked_time_advance
 from version import MODEL_VERSION
 
 
@@ -178,6 +179,9 @@ class CellCulture:
             raise ValueError("培养单步时长必须是 0–6 h 内的有限数值。")
         if dt_h == 0.0:
             return
+        was_alive = self.alive
+        current_time_h = _finite_nonnegative(self.time_h)
+        next_time_h = checked_time_advance(current_time_h, dt_h) if was_alive else None
         # 状态可来自 CSV/恢复文件；推进前统一裁剪，避免单个无效值污染后续历史。
         for name in ("viable_cells", "dead_cells", "glucose_mm", "glutamine_mm", "lactate_mm", "oxygen_percent", "drug_um"):
             setattr(self, name, _finite_nonnegative(getattr(self, name)))
@@ -188,10 +192,10 @@ class CellCulture:
         self.co2_percent = min(100.0, _finite_nonnegative(self.co2_percent, self.profile.co2_percent))
         self.osmolality_mosm_kg = min(1000.0, _finite_nonnegative(self.osmolality_mosm_kg, 300.0))
         self.energy_index = min(100.0, _finite_nonnegative(self.energy_index, 100.0))
-        self.time_h = _finite_nonnegative(self.time_h)
+        self.time_h = current_time_h
         self.last_growth_rate_per_h = _finite_nonnegative(self.last_growth_rate_per_h)
         self.last_death_rate_per_h = _finite_nonnegative(self.last_death_rate_per_h)
-        if not self.alive:
+        if not was_alive:
             return
         p = self.parameters
         modifiers = self.growth_modifiers()
@@ -270,7 +274,7 @@ class CellCulture:
         self.energy_index = max(0.0, min(100.0, energy))
         # 0.003 h⁻¹ 是演示性衰减；具体药物须使用稳定性/清除实验数据替换。
         self.drug_um = max(0.0, self.drug_um * exp(-0.003 * dt_h))
-        self.time_h += dt_h
+        self.time_h = next_time_h
         self.last_growth_rate_per_h = mu
         self.last_death_rate_per_h = death_rate
 

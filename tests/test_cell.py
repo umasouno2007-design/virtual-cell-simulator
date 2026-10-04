@@ -164,6 +164,14 @@ class CellCultureTestCase(unittest.TestCase):
                     cell.step(1.0)
                 self.assertEqual(cell.time_h, 0.0)
 
+    def test_culture_clock_precision_loss_is_rejected_before_state_changes(self) -> None:
+        cell = CellCulture("hela")
+        cell.time_h = 1e20
+        before = cell.snapshot()
+        with self.assertRaisesRegex(ValueError, "模拟时钟无法安全推进"):
+            cell.step(0.25)
+        self.assertEqual(cell.snapshot(), before)
+
     def test_large_finite_cell_counts_do_not_fake_zero_viability_or_overflow(self) -> None:
         cell = CellCulture("hela", viable_cells=1.7e308)
         cell.dead_cells = 1.7e308

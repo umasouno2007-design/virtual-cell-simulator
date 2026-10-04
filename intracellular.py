@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from math import isfinite
 from typing import Dict, TYPE_CHECKING
 
-from microenvironment import MicroenvironmentState, checked_time_advance
+from microenvironment import MicroenvironmentState
+from numeric_utils import checked_time_advance
 
 if TYPE_CHECKING:
     from cell import CellCulture
