@@ -28,6 +28,30 @@ class CellCultureTestCase(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "不支持的实验预设"):
                     new_simulation("a549", preset_name=invalid)
 
+    def test_boolean_culture_constructor_inputs_are_rejected(self) -> None:
+        invalid_inputs = (
+            {"culture_volume_ml": True},
+            {"surface_area_cm2": False},
+            {"viable_cells": True},
+        )
+        for kwargs in invalid_inputs:
+            with self.subTest(kwargs=kwargs):
+                with self.assertRaisesRegex(ValueError, "不能使用布尔值代替"):
+                    CellCulture("a549", **kwargs)
+
+    def test_boolean_culture_actions_are_rejected_without_state_changes(self) -> None:
+        cell = CellCulture("a549")
+        before = cell.snapshot()
+        for action in (
+            lambda: cell.exchange_medium(True),
+            lambda: cell.add_drug(True),
+            lambda: cell.add_glucose(True),
+        ):
+            with self.subTest(action=action):
+                with self.assertRaisesRegex(ValueError, "不能使用布尔值代替"):
+                    action()
+                self.assertEqual(cell.snapshot(), before)
+
     def test_standard_culture_grows_and_uses_glucose(self) -> None:
         cell = CellCulture("hela")
         cells_before = cell.viable_cells

@@ -22,6 +22,8 @@ def _finite_nonnegative(value: float, fallback: float = 0.0) -> float:
 def _finite_action_amount(value: float, label: str) -> float:
     """Reject non-finite user actions before they can enter an exported snapshot."""
 
+    if isinstance(value, bool):
+        raise ValueError(f"{label}必须是有限数值，不能使用布尔值代替。")
     try:
         amount = float(value)
     except (TypeError, ValueError):
@@ -64,6 +66,8 @@ class CellCulture:
         viable_cells: float | None = None,
         parameters: ModelParameters | None = None,
     ) -> None:
+        if any(isinstance(value, bool) for value in (culture_volume_ml, surface_area_cm2, viable_cells)):
+            raise ValueError("培养体积、培养面积和初始细胞数必须是数值，不能使用布尔值代替。")
         self.profile: CellProfile = get_profile(profile_key)
         self.profile_key = self.profile.key
         self.culture_volume_ml = max(0.1, _finite_nonnegative(culture_volume_ml, 0.1))
