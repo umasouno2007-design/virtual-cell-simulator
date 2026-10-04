@@ -47,7 +47,10 @@ def new_simulation(
         surface_area_cm2=surface_area_cm2,
         parameters=ModelParameters(),
     )
-    changes = PRESETS.get(preset_name, PRESETS["标准培养"])["changes"]
+    if not isinstance(preset_name, str) or preset_name not in PRESETS:
+        supported = "、".join(PRESETS)
+        raise ValueError(f"不支持的实验预设；可用预设：{supported}。")
+    changes = PRESETS[preset_name]["changes"]
     for name, value in changes.items():
         if name == "seeding_fraction":
             cell.viable_cells = cell.carrying_capacity * value

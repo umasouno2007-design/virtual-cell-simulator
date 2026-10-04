@@ -129,6 +129,9 @@ CELL_PROFILES: Dict[str, CellProfile] = {
 
 
 def get_profile(key: str) -> CellProfile:
-    """按键名返回细胞配置，未知键名回退到 HeLa。"""
+    """按键名返回细胞配置；未知键名明确失败，避免误用其他细胞系。"""
 
-    return CELL_PROFILES.get(key, CELL_PROFILES["hela"])
+    if not isinstance(key, str) or key not in CELL_PROFILES:
+        supported = ", ".join(sorted(CELL_PROFILES))
+        raise ValueError(f"不支持的细胞系配置；可用键名：{supported}。")
+    return CELL_PROFILES[key]

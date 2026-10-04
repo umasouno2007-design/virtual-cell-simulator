@@ -16,6 +16,18 @@ class CellCultureTestCase(unittest.TestCase):
             self.assertEqual(len(history), 1)
             self.assertGreater(cell.viable_cells, 0)
 
+    def test_unknown_cell_profile_is_not_silently_replaced_with_hela(self) -> None:
+        for invalid in ("A549", "typo", None, []):
+            with self.subTest(profile=invalid):
+                with self.assertRaisesRegex(ValueError, "不支持的细胞系配置"):
+                    CellCulture(invalid)
+
+    def test_unknown_experiment_preset_is_not_silently_replaced_with_standard(self) -> None:
+        for invalid in ("低氧", "typo", None, []):
+            with self.subTest(preset=invalid):
+                with self.assertRaisesRegex(ValueError, "不支持的实验预设"):
+                    new_simulation("a549", preset_name=invalid)
+
     def test_standard_culture_grows_and_uses_glucose(self) -> None:
         cell = CellCulture("hela")
         cells_before = cell.viable_cells
