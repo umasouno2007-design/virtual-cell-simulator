@@ -45,6 +45,28 @@ class IntracellularForecastTestCase(unittest.TestCase):
         )
         self.assertEqual(result["completed_h"], 0.0)
 
+    def test_forecast_rejects_invalid_objects_misaligned_clocks_and_unknown_keys(self) -> None:
+        cell = CellCulture("hela")
+        cell.step(1.0)
+        with self.assertRaisesRegex(ValueError, "时钟不一致"):
+            forecast_intracellular_state(
+                cell, IntracellularState(), attribute="glucose_mm", value=5.0, horizon_h=1.0,
+            )
+        negative_cell, negative_state = CellCulture(), IntracellularState()
+        negative_cell.time_h = negative_state.time_h = -1.0
+        with self.assertRaisesRegex(ValueError, "非负小时数"):
+            forecast_intracellular_state(
+                negative_cell, negative_state, attribute="glucose_mm", value=5.0, horizon_h=1.0,
+            )
+        with self.assertRaisesRegex(ValueError, "培养状态对象"):
+            forecast_intracellular_state(
+                None, IntracellularState(), attribute="glucose_mm", value=5.0, horizon_h=1.0,
+            )
+        with self.assertRaisesRegex(KeyError, "未知条件"):
+            forecast_intracellular_state(
+                CellCulture(), IntracellularState(), attribute=[], value=5.0, horizon_h=1.0,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

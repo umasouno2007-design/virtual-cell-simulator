@@ -26,8 +26,23 @@ def forecast_intracellular_state(
 ) -> dict[str, Any]:
     """复制当前状态并推进候选条件；原对象始终不被修改。"""
 
-    if attribute not in FORECAST_INPUTS:
+    if not isinstance(cell, CellCulture):
+        raise ValueError("条件推演需要有效的培养状态对象。")
+    if not isinstance(state, IntracellularState):
+        raise ValueError("条件推演需要有效的代表性细胞状态。")
+    if not isinstance(attribute, str) or attribute not in FORECAST_INPUTS:
         raise KeyError(f"未知条件：{attribute}")
+    if is_boolean_scalar(cell.time_h) or is_boolean_scalar(state.time_h):
+        raise ValueError("培养时钟与代表性细胞状态时钟必须是有限小时数。")
+    try:
+        cell_time_h = float(cell.time_h)
+        state_time_h = float(state.time_h)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("培养时钟与代表性细胞状态时钟必须是有限小时数。") from None
+    if not isfinite(cell_time_h) or not isfinite(state_time_h) or cell_time_h < 0 or state_time_h < 0:
+        raise ValueError("培养时钟与代表性细胞状态时钟必须是有限非负小时数。")
+    if abs(cell_time_h - state_time_h) > 1e-6:
+        raise ValueError("培养时钟与代表性细胞状态时钟不一致；请先重置或同步当前场景。")
     if is_boolean_scalar(value) or is_boolean_scalar(horizon_h):
         raise ValueError("候选条件和推演时长必须是有限数值。")
     try:

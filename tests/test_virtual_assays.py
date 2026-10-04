@@ -33,6 +33,10 @@ class VirtualAssayTestCase(unittest.TestCase):
             with self.subTest(kwargs=kwargs):
                 with self.assertRaises(ValueError):
                     simulate_virtual_assay("ros_fluorescence", snapshot, **kwargs)
+        for invalid_assay in ([], None):
+            with self.subTest(assay=invalid_assay):
+                with self.assertRaisesRegex(KeyError, "未知虚拟检测"):
+                    simulate_virtual_assay(invalid_assay, snapshot)
         for invalid in (-1.0, 101.0, float("inf"), float("nan"), True, pandas_boolean):
             with self.subTest(index=invalid):
                 with self.assertRaises(ValueError):

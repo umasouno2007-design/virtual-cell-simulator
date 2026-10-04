@@ -24,10 +24,18 @@ class SensitivityTestCase(unittest.TestCase):
 
     def test_invalid_horizon_is_rejected(self) -> None:
         pandas_boolean = pd.Series([True]).iloc[0]
-        for invalid in (0, -1, 169, None, "later", True, pandas_boolean, float("nan"), float("inf")):
+        for invalid in (0, -1, 169, None, "later", True, pandas_boolean, float("nan"), float("inf"), 10**10000):
             with self.subTest(horizon=invalid):
                 with self.assertRaisesRegex(ValueError, "分析时长"):
                     simulate_one_factor(CellCulture(), "growth_scale", invalid)
+
+    def test_invalid_analysis_objects_and_unhashable_parameter_names_are_domain_errors(self) -> None:
+        with self.assertRaisesRegex(ValueError, "培养状态对象"):
+            simulate_one_factor(None, "growth_scale")
+        with self.assertRaisesRegex(ValueError, "培养状态对象"):
+            run_sensitivity(None)
+        with self.assertRaisesRegex(ValueError, "未知敏感性参数"):
+            simulate_one_factor(CellCulture(), [], 1.0)
 
 
 if __name__ == "__main__":

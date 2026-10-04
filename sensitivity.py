@@ -87,13 +87,15 @@ def simulate_one_factor(cell: CellCulture, parameter_key: str, horizon_h: float 
     ``METRICS`` 所列真实单位指标。异常输入抛出 ``ValueError``。
     """
 
-    if parameter_key not in SENSITIVITY_PARAMETERS:
+    if not isinstance(cell, CellCulture):
+        raise ValueError("敏感性分析需要有效的培养状态对象。")
+    if not isinstance(parameter_key, str) or parameter_key not in SENSITIVITY_PARAMETERS:
         raise ValueError(f"未知敏感性参数：{parameter_key}")
     if is_boolean_scalar(horizon_h):
         raise ValueError("分析时长必须是 0–168 h 内的有限正数。")
     try:
         horizon = float(horizon_h)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise ValueError("分析时长必须是 0–168 h 内的有限正数。") from None
     if not isfinite(horizon) or not 0 < horizon <= 168:
         raise ValueError("分析时长必须是 0–168 h 内的有限正数。")
@@ -115,6 +117,8 @@ def simulate_one_factor(cell: CellCulture, parameter_key: str, horizon_h: float 
 def run_sensitivity(cell: CellCulture, horizon_h: float = 72.0) -> tuple[pd.DataFrame, pd.DataFrame]:
     """运行全部默认单因素场景，返回逐时历史和终点摘要；不估计置信区间。"""
 
+    if not isinstance(cell, CellCulture):
+        raise ValueError("敏感性分析需要有效的培养状态对象。")
     histories = [simulate_one_factor(cell, key, horizon_h) for key in SENSITIVITY_PARAMETERS]
     history = pd.concat(histories, ignore_index=True)
     final_time = history.groupby(["parameter", "scenario"])["time_h"].transform("max")

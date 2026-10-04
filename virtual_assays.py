@@ -42,6 +42,8 @@ ASSAYS: dict[str, dict[str, str]] = {
 def assay_base_value(assay_key: str, snapshot: dict[str, float | str]) -> float:
     """将内部相对指数映射为仅用于展示的合成读出基线。"""
 
+    if not isinstance(assay_key, str) or assay_key not in ASSAYS:
+        raise KeyError(f"未知虚拟检测：{assay_key}")
     metric = ASSAYS[assay_key]["metric"]
     try:
         raw = snapshot[metric]
@@ -71,7 +73,7 @@ def simulate_virtual_assay(
 ) -> list[dict[str, Any]]:
     """返回可导出的合成重复孔；相同输入和 seed 保持可复现。"""
 
-    if assay_key not in ASSAYS:
+    if not isinstance(assay_key, str) or assay_key not in ASSAYS:
         raise KeyError(f"未知虚拟检测：{assay_key}")
     if type(replicates) is not int or not 1 <= replicates <= 12:
         raise ValueError("合成重复孔数必须是 1–12 的整数；不会静默截断。")
