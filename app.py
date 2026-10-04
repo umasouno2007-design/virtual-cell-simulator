@@ -1544,7 +1544,7 @@ def measurement_data_panel(cell, history) -> pd.DataFrame | None:
             "支持 UTF-8/GB18030 CSV。至少包含时间列（time_h、time、hour 或“时间”）；"
             "可选：活细胞数、存活率、葡萄糖、乳酸、pH、氧。上传的数据只保留在当前浏览器会话。"
         )
-        uploaded = st.file_uploader("选择实测 CSV", type=["csv"], key="measurement_csv")
+        uploaded = st.file_uploader("选择实测 CSV（最大 5 MiB）", type=["csv"], key="measurement_csv")
         if uploaded is None:
             existing = st.session_state.get("measurement_data")
             if existing is None:

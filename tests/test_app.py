@@ -284,7 +284,7 @@ class AppStateTestCase(unittest.TestCase):
         app = AppTest.from_file(app_path).run(timeout=30)
         self._set_mode(app, "培养环境与数据工作流")
         csv_bytes = b"time_h,viable_cells,glucose_mM\n0,250000,5.5\n12,280000,5.2\n24,315000,4.9\n36,350000,4.5\n48,390000,4.1\n"
-        next(item for item in app.file_uploader if item.label == "选择实测 CSV").upload(
+        next(item for item in app.file_uploader if item.label == "选择实测 CSV（最大 5 MiB）").upload(
             "teaching.csv", csv_bytes, "text/csv",
         ).run(timeout=30)
         next(item for item in app.button if item.label == "计算两参数粗校准").click().run(timeout=60)
@@ -299,7 +299,7 @@ class AppStateTestCase(unittest.TestCase):
         app_path = Path(__file__).resolve().parents[1] / "app.py"
         app = AppTest.from_file(app_path).run(timeout=30)
         self._set_mode(app, "培养环境与数据工作流")
-        next(item for item in app.file_uploader if item.label == "选择实测 CSV").upload(
+        next(item for item in app.file_uploader if item.label == "选择实测 CSV（最大 5 MiB）").upload(
             "observations.csv",
             b"time_h,viable_cells\n0,250000\n24,280000\n48,315000\n",
             "text/csv",
@@ -312,7 +312,7 @@ class AppStateTestCase(unittest.TestCase):
         app = AppTest.from_file(app_path).run(timeout=30)
         self._set_mode(app, "培养环境与数据工作流")
         csv_a = b"time_h,viable_cells\n0,100\n24,250\n48,500\n72,700\n96,900\n"
-        uploader = next(item for item in app.file_uploader if item.label == "选择实测 CSV")
+        uploader = next(item for item in app.file_uploader if item.label == "选择实测 CSV（最大 5 MiB）")
         uploader.upload("first.csv", csv_a, "text/csv").run(timeout=30)
         self.assertEqual(app.session_state["measurement_data"].iloc[0]["viable_cells"], 100)
         context = next(item.value for item in app.markdown if '<div class="ec-context"' in item.value)
@@ -327,7 +327,7 @@ class AppStateTestCase(unittest.TestCase):
 
         app.session_state["coarse_calibration"] = CalibrationResult(1.0, 1.0, 0.1, [])
         csv_b = b"time_h,viable_cells\n0,200\n24,350\n48,600\n72,900\n96,1100\n"
-        next(item for item in app.file_uploader if item.label == "选择实测 CSV").upload(
+        next(item for item in app.file_uploader if item.label == "选择实测 CSV（最大 5 MiB）").upload(
             "second.csv", csv_b, "text/csv",
         ).run(timeout=30)
         self.assertEqual(app.session_state["measurement_data"].iloc[0]["viable_cells"], 200)
@@ -346,12 +346,12 @@ class AppStateTestCase(unittest.TestCase):
         context = next(item.value for item in app.markdown if '<div class="ec-context"' in item.value)
         self.assertIn("未导入实测数据", context)
 
-        next(item for item in app.file_uploader if item.label == "选择实测 CSV").upload(
+        next(item for item in app.file_uploader if item.label == "选择实测 CSV（最大 5 MiB）").upload(
             "third.csv", csv_a, "text/csv",
         ).run(timeout=30)
         app.session_state["coarse_calibration"] = CalibrationResult(1.0, 1.0, 0.1, [])
         invalid_csv = b"unknown_column\n1\n2\n"
-        next(item for item in app.file_uploader if item.label == "选择实测 CSV").upload(
+        next(item for item in app.file_uploader if item.label == "选择实测 CSV（最大 5 MiB）").upload(
             "invalid.csv", invalid_csv, "text/csv",
         ).run(timeout=30)
         self.assertNotIn("measurement_data", app.session_state)
@@ -364,7 +364,7 @@ class AppStateTestCase(unittest.TestCase):
         app = AppTest.from_file(app_path).run(timeout=30)
         self._set_mode(app, "培养环境与数据工作流")
         csv_bytes = b"time_h,viable_cells\n0,100\n24,250\n48,500\n72,700\n96,900\n"
-        next(item for item in app.file_uploader if item.label == "选择实测 CSV").upload(
+        next(item for item in app.file_uploader if item.label == "选择实测 CSV（最大 5 MiB）").upload(
             "measurements.csv", csv_bytes, "text/csv",
         ).run(timeout=30)
         self.assertEqual(app.session_state["measurement_data_profile_key"], "hela")
@@ -409,7 +409,7 @@ class AppStateTestCase(unittest.TestCase):
         app = AppTest.from_file(app_path).run(timeout=30)
         self._set_mode(app, "培养环境与数据工作流")
         csv_bytes = b"time_h,viable_cells,oxygen_percent\n0,100,20\n24,200,inf\n48,300,18\n"
-        next(item for item in app.file_uploader if item.label == "选择实测 CSV").upload(
+        next(item for item in app.file_uploader if item.label == "选择实测 CSV（最大 5 MiB）").upload(
             "non_finite.csv", csv_bytes, "text/csv",
         ).run(timeout=30)
         self.assertIsNotNone(app.session_state["measurement_data"])
