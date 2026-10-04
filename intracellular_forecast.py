@@ -6,6 +6,7 @@ from typing import Any
 
 from cell import CellCulture
 from intracellular import IntracellularState
+from numeric_utils import is_boolean_scalar
 
 
 FORECAST_INPUTS = {
@@ -27,7 +28,7 @@ def forecast_intracellular_state(
 
     if attribute not in FORECAST_INPUTS:
         raise KeyError(f"未知条件：{attribute}")
-    if isinstance(value, bool) or isinstance(horizon_h, bool):
+    if is_boolean_scalar(value) or is_boolean_scalar(horizon_h):
         raise ValueError("候选条件和推演时长必须是有限数值。")
     try:
         candidate_value = float(value)

@@ -12,6 +12,7 @@ from math import isfinite
 import pandas as pd
 
 from cell import CellCulture, ModelParameters
+from numeric_utils import is_boolean_scalar
 
 
 METRICS = ("viable_cells", "viability_percent", "glucose_mM", "lactate_mM", "pH")
@@ -88,7 +89,7 @@ def simulate_one_factor(cell: CellCulture, parameter_key: str, horizon_h: float 
 
     if parameter_key not in SENSITIVITY_PARAMETERS:
         raise ValueError(f"未知敏感性参数：{parameter_key}")
-    if isinstance(horizon_h, bool):
+    if is_boolean_scalar(horizon_h):
         raise ValueError("分析时长必须是 0–168 h 内的有限正数。")
     try:
         horizon = float(horizon_h)

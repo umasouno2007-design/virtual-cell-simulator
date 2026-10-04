@@ -1,6 +1,7 @@
 """敏感性分析不改写模型状态且能处理边界输入。"""
 
 import unittest
+import pandas as pd
 
 from cell import CellCulture
 from sensitivity import SENSITIVITY_PARAMETERS, run_sensitivity, simulate_one_factor
@@ -22,7 +23,8 @@ class SensitivityTestCase(unittest.TestCase):
         self.assertEqual(len(summary), 3 * len(SENSITIVITY_PARAMETERS))
 
     def test_invalid_horizon_is_rejected(self) -> None:
-        for invalid in (0, -1, 169, None, "later", True, float("nan"), float("inf")):
+        pandas_boolean = pd.Series([True]).iloc[0]
+        for invalid in (0, -1, 169, None, "later", True, pandas_boolean, float("nan"), float("inf")):
             with self.subTest(horizon=invalid):
                 with self.assertRaisesRegex(ValueError, "分析时长"):
                     simulate_one_factor(CellCulture(), "growth_scale", invalid)

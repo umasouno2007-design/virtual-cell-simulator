@@ -1,6 +1,7 @@
 """虚拟检测的可重复性与边界测试。"""
 
 import unittest
+import pandas as pd
 
 from virtual_assays import simulate_virtual_assay
 
@@ -23,15 +24,16 @@ class VirtualAssayTestCase(unittest.TestCase):
 
     def test_invalid_synthetic_assay_inputs_are_rejected_not_clipped(self) -> None:
         snapshot = {"ROS_percent": 30.0}
+        pandas_boolean = pd.Series([True]).iloc[0]
         for kwargs in (
             {"replicates": 0}, {"replicates": 13}, {"replicates": 2.5},
             {"noise_percent": float("nan")}, {"noise_percent": -1.0},
-            {"noise_percent": 31.0}, {"seed": True},
+            {"noise_percent": 31.0}, {"noise_percent": pandas_boolean}, {"seed": True},
         ):
             with self.subTest(kwargs=kwargs):
                 with self.assertRaises(ValueError):
                     simulate_virtual_assay("ros_fluorescence", snapshot, **kwargs)
-        for invalid in (-1.0, 101.0, float("inf"), float("nan"), True):
+        for invalid in (-1.0, 101.0, float("inf"), float("nan"), True, pandas_boolean):
             with self.subTest(index=invalid):
                 with self.assertRaises(ValueError):
                     simulate_virtual_assay("ros_fluorescence", {"ROS_percent": invalid})

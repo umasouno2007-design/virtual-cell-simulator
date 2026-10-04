@@ -1,6 +1,7 @@
 """细胞内条件沙盒测试。"""
 
 import unittest
+import pandas as pd
 
 from cell import CellCulture
 from intracellular import IntracellularState
@@ -25,8 +26,10 @@ class IntracellularForecastTestCase(unittest.TestCase):
 
     def test_forecast_rejects_invalid_values_without_silent_clipping(self) -> None:
         cell, state = CellCulture("hela"), IntracellularState()
+        pandas_boolean = pd.Series([True]).iloc[0]
         for value, horizon in ((float("nan"), 1.0), (22.0, 1.0), (1.0, -1.0),
-                               (1.0, 49.0), (1.0, float("inf")), (True, 1.0)):
+                               (1.0, 49.0), (1.0, float("inf")), (True, 1.0),
+                               (pandas_boolean, 1.0), (1.0, pandas_boolean)):
             with self.subTest(value=value, horizon=horizon):
                 with self.assertRaisesRegex(ValueError, "候选|推演|有限"):
                     forecast_intracellular_state(

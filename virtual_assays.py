@@ -8,6 +8,7 @@
 from random import Random
 from math import isfinite
 from typing import Any
+from numeric_utils import is_boolean_scalar
 
 
 ASSAYS: dict[str, dict[str, str]] = {
@@ -44,7 +45,7 @@ def assay_base_value(assay_key: str, snapshot: dict[str, float | str]) -> float:
     metric = ASSAYS[assay_key]["metric"]
     try:
         raw = snapshot[metric]
-        if isinstance(raw, bool):
+        if is_boolean_scalar(raw):
             raise ValueError
         index = float(raw)
     except (KeyError, TypeError, ValueError, OverflowError):
@@ -74,7 +75,7 @@ def simulate_virtual_assay(
         raise KeyError(f"未知虚拟检测：{assay_key}")
     if type(replicates) is not int or not 1 <= replicates <= 12:
         raise ValueError("合成重复孔数必须是 1–12 的整数；不会静默截断。")
-    if isinstance(noise_percent, bool):
+    if is_boolean_scalar(noise_percent):
         raise ValueError("演示性孔间变异必须是 0–30% 内的有限数值。")
     try:
         noise_percent = float(noise_percent)
