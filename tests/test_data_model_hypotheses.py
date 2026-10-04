@@ -195,6 +195,17 @@ class DataModelHypothesesTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "0–100"):
             validate_hypothesis_scenario(scenario)
 
+    def test_unrepresentably_large_scenario_numbers_return_validation_errors(self) -> None:
+        scenario = load_hypothesis_scenario()
+        scenario["teaching_scenario"]["suggested_duration_h"] = 10**10000
+        with self.assertRaisesRegex(ValueError, "总时长必须为有限数值"):
+            validate_hypothesis_scenario(scenario)
+
+        scenario = load_hypothesis_scenario()
+        scenario["teaching_scenario"]["initial_environment"]["glucose_mM"] = 10**10000
+        with self.assertRaisesRegex(ValueError, "glucose_mM.*必须为有限数值"):
+            validate_hypothesis_scenario(scenario)
+
     def test_incomplete_provenance_environment_and_calibration_claims_are_rejected(self) -> None:
         scenario = load_hypothesis_scenario()
         scenario["source_data"].pop("dataset_url")

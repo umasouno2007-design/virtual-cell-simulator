@@ -74,12 +74,15 @@ class MicroenvironmentState:
     def from_culture(cls, culture: object) -> "MicroenvironmentState":
         """从现有 ``CellCulture`` 派生同格式输入，保持培养模型不变。"""
 
-        from cell import CellCulture
+        from cell import CellCulture, ModelParameters
+        from profiles import CellProfile
 
         if not isinstance(culture, CellCulture):
             raise ValueError("只能从有效的 CellCulture 对象派生微环境。")
-        profile = getattr(culture, "profile")
-        parameters = getattr(culture, "parameters")
+        profile = getattr(culture, "profile", None)
+        parameters = getattr(culture, "parameters", None)
+        if not isinstance(profile, CellProfile) or not isinstance(parameters, ModelParameters):
+            raise ValueError("培养状态的细胞系配置或模型参数对象无效，无法派生微环境。")
         source_values = {
             "培养时钟": getattr(culture, "time_h"),
             "培养氧设定": getattr(culture, "oxygen_percent"),

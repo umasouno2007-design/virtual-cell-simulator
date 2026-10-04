@@ -32,6 +32,20 @@ ENVIRONMENT_RANGES = {
     "doubling_time_h": (1.0, 500.0),
     "drug_ic50_uM": (1e-6, 1e6),
 }
+
+
+def _finite_scenario_number(value: Any, label: str) -> float:
+    """Convert untrusted JSON numerics without leaking overflow exceptions."""
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{label}必须为有限数值。")
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{label}必须为有限数值。") from None
+    if not isfinite(numeric):
+        raise ValueError(f"{label}必须为有限数值。")
+    return numeric
 LOCAL_MAPPING_TOP_LEVEL_FIELDS = {
     "schema", "status", "notice", "source", "observations", "model_mapping",
 }
@@ -254,19 +268,18 @@ def validate_hypothesis_scenario(payload: Any) -> None:
         raise ValueError("相对教学输入指数必须在 0–100 范围内。")
     duration = teaching.get("suggested_duration_h")
     step = teaching.get("time_step_h")
-    if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in (duration, step)):
-        raise ValueError("假设场景的时长和时间步长必须为数值。")
+    duration = _finite_scenario_number(duration, "假设场景总时长")
+    step = _finite_scenario_number(step, "假设场景时间步长")
     if not 0 < step <= 6 or not 0 < duration <= 168:
         raise ValueError("假设场景时长须大于 0 且不超过 168 h，时间步须在 0–6 h。")
-    if not isfinite(float(duration / step)) or abs(duration / step - round(duration / step)) > 1e-9:
+    steps = duration / step
+    if not isfinite(steps) or abs(steps - round(steps)) > 1e-9:
         raise ValueError("假设场景总时长必须是时间步长的整数倍，便于按相同步数复跑。")
     environment = teaching.get("initial_environment")
     if not isinstance(environment, dict) or set(environment) != set(ENVIRONMENT_RANGES):
         raise ValueError("初始微环境必须完整包含已定义字段，不能省略或附加未知字段。")
     for key, (low, high) in ENVIRONMENT_RANGES.items():
-        value = environment[key]
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(float(value)):
-            raise ValueError(f"初始微环境 {key} 必须为有限数值。")
+        value = _finite_scenario_number(environment[key], f"初始微环境 {key}")
         if not low <= value <= high:
             raise ValueError(f"初始微环境 {key} 超出允许范围 {low}–{high}。")
     if payload["evidence"].get("parameter_calibration") != "none":

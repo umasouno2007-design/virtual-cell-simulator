@@ -198,6 +198,14 @@ class MicroenvironmentAndMicrocolonyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "培养氧设定.*有限数值"):
             MicroenvironmentState.from_culture(culture)
 
+    def test_culture_adapter_reports_corrupt_profile_and_parameter_objects(self) -> None:
+        for attribute in ("profile", "parameters"):
+            with self.subTest(attribute=attribute):
+                culture = CellCulture("a549")
+                setattr(culture, attribute, None)
+                with self.assertRaisesRegex(ValueError, "细胞系配置或模型参数对象无效"):
+                    MicroenvironmentState.from_culture(culture)
+
     def test_legacy_culture_input_matches_explicit_microenvironment_path(self) -> None:
         culture = CellCulture("a549")
         legacy_path = IntracellularState()
