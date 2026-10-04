@@ -158,6 +158,28 @@ class MicroenvironmentAndMicrocolonyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "3–50"):
             MicrocolonyState(cell_count=2)
 
+    def test_minimum_and_maximum_colonies_stay_finite_under_extreme_conditions(self) -> None:
+        environment = MicroenvironmentState(
+            local_oxygen_availability=0.0,
+            glucose_mm=0.0,
+            ph=5.5,
+            temperature_c=50.0,
+            drug_um=1e6,
+        )
+        for count in (3, 50):
+            with self.subTest(cell_count=count):
+                colony = MicrocolonyState(cell_count=count, communication_enabled=True)
+                colony.step(environment, 6.0)
+                self.assertTrue(colony.finite())
+                self.assertEqual(len(colony.cells), count)
+                self.assertEqual(len(colony.history), 2 * count)
+                for cell in colony.cells:
+                    numeric_state = (
+                        value for value in cell.state.snapshot().values()
+                        if isinstance(value, (int, float))
+                    )
+                    self.assertTrue(all(math.isfinite(value) for value in numeric_state))
+
     def test_reset_can_record_the_active_environment_without_fabricating_initial_inputs(self) -> None:
         colony = MicrocolonyState(cell_count=3)
         self.assertNotIn("local_oxygen_availability", colony.history[0])
