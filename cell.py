@@ -76,10 +76,7 @@ class CellCulture:
         self.profile_key = self.profile.key
         self.culture_volume_ml = max(0.1, _finite_nonnegative(culture_volume_ml, 0.1))
         self.surface_area_cm2 = max(0.1, _finite_nonnegative(surface_area_cm2, 0.1))
-        if not isfinite(self.culture_volume_ml * 2.5e5):
-            raise ValueError("培养体积超出当前模型的数值安全范围。")
-        if not isfinite(self.surface_area_cm2 * self.profile.max_density_cell_cm2):
-            raise ValueError("培养面积使承载容量超出当前模型的数值安全范围。")
+        self._validate_culture_dimensions()
         default_viable = (
             self.profile.seeding_density_cell_cm2 * self.surface_area_cm2
         )
@@ -126,6 +123,24 @@ class CellCulture:
     def confluence_percent(self) -> float:
         return min(100.0, 100.0 * self.viable_cells / self.carrying_capacity)
 
+    def _validate_culture_dimensions(self) -> None:
+        """Validate well volume and surface area before any density/uptake calculation."""
+
+        for name in ("culture_volume_ml", "surface_area_cm2"):
+            value = getattr(self, name)
+            if is_boolean_scalar(value) or not isinstance(value, (int, float)):
+                raise ValueError(f"培养状态 {name} 必须是有限正数。")
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError, OverflowError):
+                raise ValueError(f"培养状态 {name} 必须是有限正数。") from None
+            if not isfinite(numeric) or numeric < 0.1:
+                raise ValueError(f"培养状态 {name} 必须是有限正数。")
+        if not isfinite(self.culture_volume_ml * 2.5e5):
+            raise ValueError("培养体积超出当前模型的数值安全范围。")
+        if not isfinite(self.surface_area_cm2 * self.profile.max_density_cell_cm2):
+            raise ValueError("培养面积使承载容量超出当前模型的数值安全范围。")
+
     @property
     def alive(self) -> bool:
         return self.viable_cells >= 1.0 and self.viability_percent > 1.0
@@ -140,6 +155,7 @@ class CellCulture:
 
         p = self.parameters
         self._validate_finite_parameters()
+        self._validate_culture_dimensions()
         for name in (
             "glucose_mm", "glutamine_mm", "oxygen_percent", "ph", "temperature_c",
             "osmolality_mosm_kg", "viable_cells", "lactate_mm", "drug_um",
@@ -222,6 +238,7 @@ class CellCulture:
         for name in numeric_state_fields:
             if is_boolean_scalar(getattr(self, name)):
                 raise ValueError(f"培养状态 {name} 不能使用布尔值代替数值；请重置或载入有效状态。")
+        self._validate_culture_dimensions()
         was_alive = self.alive
         current_time_h = _finite_nonnegative(self.time_h)
         next_time_h = checked_time_advance(current_time_h, dt_h) if was_alive else None

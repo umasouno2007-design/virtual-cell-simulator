@@ -444,6 +444,17 @@ class CellCultureTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "培养体积超出.*数值安全范围"):
             CellCulture("hela", culture_volume_ml=1e305)
 
+    def test_mutated_culture_dimensions_are_revalidated_before_calculation(self) -> None:
+        for name, invalid in (("surface_area_cm2", True), ("surface_area_cm2", 1e305),
+                              ("culture_volume_ml", float("inf"))):
+            with self.subTest(name=name, value=invalid):
+                cell = CellCulture("hela")
+                setattr(cell, name, invalid)
+                before = cell.snapshot()
+                with self.assertRaisesRegex(ValueError, f"{name}|数值安全范围"):
+                    cell.step(0.25)
+                self.assertEqual(cell.snapshot(), before)
+
     def test_negative_rate_or_uptake_cannot_create_negative_outputs(self) -> None:
         for name in ("death_rate_per_h", "uptake_scale", "oxygen_transfer_per_h"):
             cell = CellCulture("hela")
