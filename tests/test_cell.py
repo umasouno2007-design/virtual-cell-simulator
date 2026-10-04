@@ -53,6 +53,19 @@ class CellCultureTestCase(unittest.TestCase):
                     action()
                 self.assertEqual(cell.snapshot(), before)
 
+    def test_negative_culture_actions_are_rejected_not_silently_clipped(self) -> None:
+        cell = CellCulture("a549")
+        before = cell.snapshot()
+        for action in (
+            lambda: cell.exchange_medium(-0.1),
+            lambda: cell.add_drug(-1.0),
+            lambda: cell.add_glucose(-1.0),
+        ):
+            with self.subTest(action=action):
+                with self.assertRaisesRegex(ValueError, "不能为负数"):
+                    action()
+                self.assertEqual(cell.snapshot(), before)
+
     def test_unrepresentably_large_constructor_and_action_values_are_handled_safely(self) -> None:
         huge = 10**10000
         cell = CellCulture(

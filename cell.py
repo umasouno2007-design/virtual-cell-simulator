@@ -30,7 +30,9 @@ def _finite_action_amount(value: float, label: str) -> float:
         raise ValueError(f"{label}必须是有限数值。") from None
     if not isfinite(amount):
         raise ValueError(f"{label}必须是有限数值。")
-    return max(0.0, amount)
+    if amount < 0.0:
+        raise ValueError(f"{label}不能为负数。")
+    return amount
 
 
 @dataclass
