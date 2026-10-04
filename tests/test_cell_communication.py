@@ -1,6 +1,7 @@
 """代表性子群通信层的边界与方向测试。"""
 
 import copy
+import math
 import unittest
 
 from cell_communication import CellCommunicationState, representative_subpopulation_points
@@ -88,6 +89,19 @@ class CellCommunicationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "通信反馈开关必须是布尔值"):
             state.step(IntracellularState(), 0.25, feedback_enabled="false")
         self.assertEqual(state.snapshot(), before)
+
+    def test_invalid_upstream_cell_state_is_not_masked_as_low_stress(self) -> None:
+        state = CellCommunicationState()
+        before_communication = state.snapshot()
+        invalid_cell = IntracellularState(ros_percent=float("nan"))
+        before_cell = invalid_cell.snapshot()
+        with self.assertRaisesRegex(ValueError, "通信层输入的单细胞状态无效"):
+            state.step(invalid_cell, 0.25, feedback_enabled=True)
+        self.assertEqual(state.snapshot(), before_communication)
+        self.assertTrue(math.isnan(invalid_cell.ros_percent))
+        for name, value in before_cell.items():
+            if name != "ROS_percent":
+                self.assertEqual(invalid_cell.snapshot()[name], value)
 
     def test_clock_precision_loss_is_rejected_before_communication_changes(self) -> None:
         state = CellCommunicationState(time_h=1e20)

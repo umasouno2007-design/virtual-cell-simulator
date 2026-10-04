@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass
 from math import ceil, exp, isclose, isfinite, sqrt
 from typing import TYPE_CHECKING
 
-from intracellular import MAX_INTERNAL_STEP_H
+from intracellular import MAX_INTERNAL_STEP_H, IntracellularState
 from microenvironment import checked_time_advance
 from numeric_utils import clamp_finite as _clamp
 
@@ -92,6 +92,8 @@ class CellCommunicationState:
             raise ValueError("通信反馈开关必须是布尔值。")
         if not self.finite():
             raise ValueError("通信状态包含越界、非有限或不守恒数值；请重置或载入有效状态。")
+        if not isinstance(intracellular, IntracellularState) or not intracellular.finite():
+            raise ValueError("通信层输入的单细胞状态无效；请重置或载入有效状态。")
         next_time_h = checked_time_advance(self.time_h, dt_h)
         if dt_h > MAX_INTERNAL_STEP_H:
             remaining_h = dt_h
