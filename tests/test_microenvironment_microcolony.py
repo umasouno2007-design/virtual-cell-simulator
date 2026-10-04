@@ -346,6 +346,28 @@ class MicroenvironmentAndMicrocolonyTests(unittest.TestCase):
         self.assertEqual(colony.history[0]["glucose_mM"], 2.0)
         self.assertEqual(colony.history[0]["environment_time_h"], 0.0)
 
+    def test_reset_validates_optional_environment_before_mutating_colony(self) -> None:
+        colony = MicrocolonyState(cell_count=5, communication_enabled=True)
+        colony.step(MicroenvironmentState(drug_um=8.0), 1.0)
+        before_count = colony.cell_count
+        before_time = colony.time_h
+        before_history = copy.deepcopy(colony.history)
+        before_states = [cell.state.snapshot() for cell in colony.cells]
+
+        for invalid_environment in (
+            object(),
+            MicroenvironmentState(local_oxygen_availability=True),
+        ):
+            with self.subTest(environment=type(invalid_environment).__name__):
+                with self.assertRaisesRegex(ValueError, "微环境"):
+                    colony.reset(3, invalid_environment)
+                self.assertEqual(colony.cell_count, before_count)
+                self.assertEqual(colony.time_h, before_time)
+                self.assertEqual(colony.history, before_history)
+                self.assertEqual(
+                    [cell.state.snapshot() for cell in colony.cells], before_states,
+                )
+
     def test_communication_off_has_no_neighbor_feedback(self) -> None:
         environment = MicroenvironmentState(drug_um=20.0)
         single = MicrocolonyState(cell_count=3, communication_enabled=False)

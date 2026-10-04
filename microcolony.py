@@ -86,6 +86,12 @@ class MicrocolonyState:
         self, cell_count: int | None = None,
         environment: MicroenvironmentState | None = None,
     ) -> None:
+        if environment is not None:
+            if not isinstance(environment, MicroenvironmentState):
+                raise ValueError("重置时的培养微环境必须是有效的 MicroenvironmentState 对象。")
+            # Validate/copy the optional input before mutating this colony, so a
+            # malformed environment cannot leave a half-reset state behind.
+            environment = environment.normalized_copy()
         if cell_count is not None:
             if type(cell_count) is not int or not 3 <= cell_count <= 50:
                 raise ValueError("代表性细胞数量必须是 3–50 的整数。")
