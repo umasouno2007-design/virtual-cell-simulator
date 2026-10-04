@@ -181,6 +181,19 @@ def comparison_frame(simulation: pd.DataFrame, measurements: pd.DataFrame) -> pd
             ).any()
             if contains_boolean:
                 raise ValueError(f"{label}字段 {FIELD_LABELS[field]}包含布尔值；请使用正确单位的数值数据。")
+    normalized_times: dict[str, pd.Series] = {}
+    for label, frame in (("模拟", simulation), ("实测", measurements)):
+        try:
+            times = pd.to_numeric(frame["time_h"], errors="coerce")
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(f"{label}时间列必须是有限、非负的小时数。") from None
+        if times.isna().any() or not times.map(lambda value: isfinite(float(value))).all() or (times < 0).any():
+            raise ValueError(f"{label}时间列必须是有限、非负的小时数。")
+        if label == "实测" and times.duplicated().any():
+            raise ValueError("实测时间点重复；请先核对原始记录并显式生成标准化副本。")
+        normalized_times[label] = times.astype(float)
+    simulation = simulation.assign(time_h=normalized_times["模拟"])
+    measurements = measurements.assign(time_h=normalized_times["实测"])
     # 同一模拟时刻可先后有干预前/后快照；稳定排序让 keep="last"
     # 确定地选择事件后的最后记录。
     simulation = simulation.sort_values("time_h", kind="stable").drop_duplicates("time_h", keep="last")

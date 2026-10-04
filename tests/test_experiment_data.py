@@ -173,6 +173,23 @@ class ExperimentDataTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "实测字段 活细胞数包含布尔值"):
             comparison_frame(simulation, boolean_measurement)
 
+    def test_comparison_rejects_non_numeric_nonfinite_negative_and_duplicate_times(self) -> None:
+        simulation = pd.DataFrame({"time_h": [0.0, 24.0], "viable_cells": [100.0, 200.0]})
+        for times in ([0.0, "bad"], [0.0, float("inf")], [-1.0, 24.0], [0.0, 0.0]):
+            with self.subTest(times=times):
+                observed = pd.DataFrame({"time_h": times, "viable_cells": [100.0, 150.0]})
+                with self.assertRaisesRegex(ValueError, "时间列|重复"):
+                    comparison_frame(simulation, observed)
+
+        duplicate_simulation = pd.DataFrame({
+            "time_h": [0.0, 24.0, 24.0], "viable_cells": [100.0, 180.0, 200.0],
+        })
+        aligned = comparison_frame(
+            duplicate_simulation,
+            pd.DataFrame({"time_h": [24.0], "viable_cells": [200.0]}),
+        )
+        self.assertEqual(aligned.loc[0, "viable_cells_simulated"], 200.0)
+
     def test_comparison_does_not_extrapolate_beyond_simulation_history(self) -> None:
         simulation = pd.DataFrame({"time_h": [0.0, 24.0], "viable_cells": [100.0, 200.0]})
         observed = pd.DataFrame({"time_h": [12.0, 48.0], "viable_cells": [140.0, 300.0]})
