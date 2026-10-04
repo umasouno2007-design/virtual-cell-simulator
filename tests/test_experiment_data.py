@@ -19,6 +19,19 @@ class ExperimentDataTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "时间列"):
             standardize_measurements("葡萄糖\n5.5\n".encode())
 
+    def test_empty_csv_and_non_byte_payloads_have_readable_errors(self) -> None:
+        for source in (b"", b"\n", b"time_h,viable_cells\n"):
+            with self.subTest(source=source):
+                with self.assertRaisesRegex(ValueError, "为空或缺少表头|不含数据行"):
+                    standardize_measurements(source)
+        with self.assertRaisesRegex(ValueError, "内容无效"):
+            standardize_measurements(None)
+
+    def test_malformed_csv_structure_has_readable_error(self) -> None:
+        source = b'time_h,viable_cells\n0,"100\n24,150\n'
+        with self.assertRaisesRegex(ValueError, "表格结构无法解析"):
+            standardize_measurements(source)
+
     def test_invalid_source_time_is_not_silently_cleaned_for_model_use(self) -> None:
         from data_quality import quality_report
 

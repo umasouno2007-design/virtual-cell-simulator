@@ -20,6 +20,12 @@ def decode_json_object(payload: bytes | str | dict) -> dict:
             )
         except json.JSONDecodeError as error:
             raise ValueError(f"场景 JSON 格式错误：第 {error.lineno} 行、第 {error.colno} 列。") from None
+        except ValueError as error:
+            # Preserve our explicit duplicate-key/non-standard-number diagnostics;
+            # normalize parser errors such as an integer exceeding Python's limit.
+            if str(error).startswith("场景 JSON "):
+                raise
+            raise ValueError("场景 JSON 含有无法解析的数值或结构。") from None
     if not isinstance(payload, dict):
         raise ValueError("场景根节点必须是 JSON 对象。")
     return payload

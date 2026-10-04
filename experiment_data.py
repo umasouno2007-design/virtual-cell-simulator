@@ -52,6 +52,9 @@ def _normalized_header(value: object) -> str:
 def _read_csv(contents: bytes) -> pd.DataFrame:
     """支持常见 UTF-8 与 Windows 中文 CSV 编码。"""
 
+    if not isinstance(contents, (bytes, bytearray)):
+        raise ValueError("CSV 文件内容无效；请重新选择 CSV 文件后重试。")
+    contents = bytes(contents)
     if len(contents) > MAX_CSV_BYTES:
         raise ValueError("CSV 超过当前在线原型的 5 MiB 解析上限；请保留原始文件并上传所需时间序列副本。")
     last_error: UnicodeDecodeError | None = None
@@ -68,6 +71,10 @@ def _read_csv(contents: bytes) -> pd.DataFrame:
                 )
         except UnicodeDecodeError as error:
             last_error = error
+        except pd.errors.EmptyDataError:
+            raise ValueError("CSV 文件为空或缺少表头；请提供含列名和观测行的 CSV。") from None
+        except pd.errors.ParserError:
+            raise ValueError("CSV 表格结构无法解析；请检查表头、分隔符和引号配对。") from None
         except pd.errors.ParserWarning:
             raise ValueError("CSV 数据行列数与表头不一致；请检查未加引号的千位分隔符或多余逗号。") from None
     raise ValueError("CSV 编码无法识别；请保存为 UTF-8 或 GB18030 后重试。") from last_error

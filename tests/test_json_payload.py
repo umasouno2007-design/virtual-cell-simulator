@@ -33,6 +33,11 @@ class JsonPayloadTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "重复字段名"):
                     decode_json_object(content)
 
+    def test_extreme_json_integer_returns_readable_validation_error(self) -> None:
+        content = '{"value": ' + ("9" * 5000) + "}"
+        with self.assertRaisesRegex(ValueError, "无法解析的数值或结构"):
+            decode_json_object(content)
+
 
 if __name__ == "__main__":
     unittest.main()
