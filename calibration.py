@@ -62,14 +62,21 @@ def _make_cell(template: CellCulture, initial: dict, growth_scale: float, uptake
 def replay_from_initial(template: CellCulture, initial: dict, target_times, growth_scale: float, uptake_scale: float) -> tuple[CellCulture, list[dict]]:
     """从历史首点重演至有限目标时刻；每段内部步长不超过 1 h。"""
 
+    if not isinstance(template, CellCulture):
+        raise ValueError("校准重演模板必须是有效的培养状态对象。")
     if not isinstance(initial, dict) or initial.get("cell_type") != template.profile_key:
         raise ValueError("校准重演起点的细胞系与当前模板不一致；请核对实验来源。")
     if initial.get("model_version") != MODEL_VERSION:
         raise ValueError("校准重演起点的模型版本不一致；不能混合不同版本结果。")
     cell = _make_cell(template, initial, growth_scale, uptake_scale)
     history = [cell.snapshot()]
+    if isinstance(target_times, (str, bytes)):
+        raise ValueError("校准重演时间必须是有限小时数。")
     try:
-        targets = [float(value) for value in target_times]
+        raw_targets = list(target_times)
+        if any(is_boolean_scalar(value) for value in raw_targets):
+            raise TypeError
+        targets = [float(value) for value in raw_targets]
     except (TypeError, ValueError, OverflowError):
         raise ValueError("校准重演时间必须是有限小时数。") from None
     if any(not isfinite(target) or target < cell.time_h for target in targets):
@@ -124,6 +131,14 @@ def fit_growth_and_uptake(
 ) -> CalibrationResult:
     """在明确范围内穷举两个缩放系数；中途培养干预需先另建无干预场景。"""
 
+    if not isinstance(template, CellCulture):
+        raise ValueError("校准模板必须是有效的培养状态对象。")
+    if not isinstance(measurements, pd.DataFrame):
+        raise ValueError("校准观测必须是已标准化的 Pandas 表格。")
+    if events is not None and (
+        not isinstance(events, list) or any(not isinstance(event, dict) for event in events)
+    ):
+        raise ValueError("校准干预记录必须是事件对象列表。")
     if len(measurements) < 2:
         raise ValueError("粗校准至少需要两个实测时间点。")
     eligible = [
@@ -257,6 +272,10 @@ def fit_with_temporal_holdout(
 ) -> CalibrationResult:
     """最后至少两个时间点作描述性留出；少于五点时只报告拟合误差。"""
 
+    if not isinstance(template, CellCulture):
+        raise ValueError("校准模板必须是有效的培养状态对象。")
+    if not isinstance(measurements, pd.DataFrame):
+        raise ValueError("校准观测必须是已标准化的 Pandas 表格。")
     if "time_h" not in measurements:
         raise ValueError("实测数据缺少 time_h 列，无法划分训练与留出时间点。")
     times = pd.to_numeric(measurements["time_h"], errors="coerce")

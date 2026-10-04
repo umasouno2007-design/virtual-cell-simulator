@@ -9,12 +9,31 @@ from cell import CellCulture
 
 
 class CalibrationTestCase(unittest.TestCase):
+    def test_invalid_calibration_container_types_return_domain_errors(self) -> None:
+        cell = CellCulture("hela")
+        for measurements, events in (
+            (None, None),
+            (pd.DataFrame({"time_h": [0.0, 24.0], "viable_cells": [100.0, 120.0]}), "bad events"),
+            (pd.DataFrame({"time_h": [0.0, 24.0], "viable_cells": [100.0, 120.0]}), ["bad event"]),
+        ):
+            with self.subTest(measurements=measurements is None, events=events):
+                with self.assertRaisesRegex(ValueError, "校准观测|校准干预记录"):
+                    fit_growth_and_uptake(cell, [cell.snapshot()], measurements, events=events)
+
+        with self.assertRaisesRegex(ValueError, "校准观测"):
+            fit_with_temporal_holdout(cell, [cell.snapshot()], None)
+
     def test_oversized_time_and_weight_inputs_are_rejected_before_search(self) -> None:
         cell = CellCulture("a549")
         initial = cell.snapshot()
         huge = 10**10000
         with self.assertRaisesRegex(ValueError, "校准重演时间"):
             replay_from_initial(cell, initial, [huge], 1.0, 1.0)
+        pandas_boolean = pd.Series([True]).iloc[0]
+        for invalid_time in ([True], [pandas_boolean], "24"):
+            with self.subTest(target_times=invalid_time):
+                with self.assertRaisesRegex(ValueError, "校准重演时间"):
+                    replay_from_initial(cell, initial, invalid_time, 1.0, 1.0)
 
         measurements = pd.DataFrame({
             "time_h": [0.0, 24.0], "viable_cells": [100.0, 120.0],
