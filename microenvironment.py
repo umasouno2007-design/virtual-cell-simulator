@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from math import isfinite
 
-from numeric_utils import checked_time_advance
+from numeric_utils import checked_time_advance, is_boolean_scalar
 
 
 def _bounded(value: float, low: float, high: float) -> float:
@@ -45,7 +45,7 @@ class MicroenvironmentState:
             "drug_um", "local_confluence_percent", "doubling_time_h",
             "drug_ic50_um",
         )
-        if any(isinstance(getattr(self, name), bool) for name in numeric_fields):
+        if any(is_boolean_scalar(getattr(self, name)) for name in numeric_fields):
             raise ValueError("微环境数值不能使用布尔值代替；请提供带单位的数值。")
 
         try:
@@ -89,7 +89,7 @@ class MicroenvironmentState:
             "倍增时间": profile.doubling_time_h,
             "药物 IC50": parameters.drug_ic50_um,
         }
-        invalid_booleans = [name for name, value in source_values.items() if isinstance(value, bool)]
+        invalid_booleans = [name for name, value in source_values.items() if is_boolean_scalar(value)]
         if invalid_booleans:
             raise ValueError(
                 "无法从培养状态派生微环境；以下数值字段不能使用布尔值代替："

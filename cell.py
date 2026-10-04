@@ -5,7 +5,7 @@ from math import exp, isfinite, log
 from typing import Dict
 
 from profiles import CellProfile, get_profile
-from numeric_utils import checked_time_advance
+from numeric_utils import checked_time_advance, is_boolean_scalar
 from version import MODEL_VERSION
 
 
@@ -22,7 +22,7 @@ def _finite_nonnegative(value: float, fallback: float = 0.0) -> float:
 def _finite_action_amount(value: float, label: str) -> float:
     """Reject non-finite user actions before they can enter an exported snapshot."""
 
-    if isinstance(value, bool):
+    if is_boolean_scalar(value):
         raise ValueError(f"{label}必须是有限数值，不能使用布尔值代替。")
     try:
         amount = float(value)
@@ -68,7 +68,7 @@ class CellCulture:
         viable_cells: float | None = None,
         parameters: ModelParameters | None = None,
     ) -> None:
-        if any(isinstance(value, bool) for value in (culture_volume_ml, surface_area_cm2, viable_cells)):
+        if any(is_boolean_scalar(value) for value in (culture_volume_ml, surface_area_cm2, viable_cells)):
             raise ValueError("培养体积、培养面积和初始细胞数必须是数值，不能使用布尔值代替。")
         self.profile: CellProfile = get_profile(profile_key)
         self.profile_key = self.profile.key
@@ -187,7 +187,7 @@ class CellCulture:
     def _step_in_place(self, dt_h: float = 1.0) -> None:
         """推进 0–6 h；越界时长抛错，实验预测前必须重新拟合参数。"""
 
-        if isinstance(dt_h, bool):
+        if is_boolean_scalar(dt_h):
             raise ValueError("培养单步时长必须是 0–6 h 内的有限数值。")
         try:
             dt_h = float(dt_h)
@@ -197,7 +197,7 @@ class CellCulture:
             raise ValueError("培养单步时长必须是 0–6 h 内的有限数值。")
         if dt_h == 0.0:
             return
-        if isinstance(self.time_h, bool):
+        if is_boolean_scalar(self.time_h):
             raise ValueError("模拟时钟无法安全推进；请重置或载入有效状态。")
         numeric_state_fields = (
             "viable_cells", "dead_cells", "glucose_mm", "glutamine_mm",
@@ -206,7 +206,7 @@ class CellCulture:
             "energy_index", "last_growth_rate_per_h", "last_death_rate_per_h",
         )
         for name in numeric_state_fields:
-            if isinstance(getattr(self, name), bool):
+            if is_boolean_scalar(getattr(self, name)):
                 raise ValueError(f"培养状态 {name} 不能使用布尔值代替数值；请重置或载入有效状态。")
         was_alive = self.alive
         current_time_h = _finite_nonnegative(self.time_h)
@@ -320,7 +320,7 @@ class CellCulture:
         positive = {"drug_ic50_um", "drug_hill", "buffer_capacity_mm_per_ph"}
         for field in fields(ModelParameters):
             value = getattr(self.parameters, field.name)
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
+            if is_boolean_scalar(value) or not isinstance(value, (int, float)):
                 raise ValueError(f"模型参数 {field.name} 必须是有限数值。")
             try:
                 finite = isfinite(value)
@@ -344,7 +344,7 @@ class CellCulture:
         current: dict[str, float] = {}
         for name in fields_to_update:
             value = getattr(self, name)
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
+            if is_boolean_scalar(value) or not isinstance(value, (int, float)):
                 raise ValueError(f"无法执行换液：培养状态 {name} 不是有效有限数值。")
             try:
                 finite = isfinite(value)
@@ -377,7 +377,7 @@ class CellCulture:
 
         increase = _finite_action_amount(concentration_increase_mm, "葡萄糖补充量")
         current = self.glucose_mm
-        if isinstance(current, bool) or not isinstance(current, (int, float)):
+        if is_boolean_scalar(current) or not isinstance(current, (int, float)):
             raise ValueError("无法补充葡萄糖：培养状态 glucose_mm 不是有效有限数值。")
         try:
             finite = isfinite(current)

@@ -3,6 +3,7 @@
 import math
 import unittest
 from dataclasses import fields
+import pandas as pd
 
 from cell import CellCulture, ModelParameters
 from profiles import CELL_PROFILES
@@ -39,6 +40,18 @@ class CellCultureTestCase(unittest.TestCase):
             with self.subTest(kwargs=kwargs):
                 with self.assertRaisesRegex(ValueError, "不能使用布尔值代替"):
                     CellCulture("a549", **kwargs)
+
+    def test_pandas_boolean_scalar_is_not_accepted_as_culture_number(self) -> None:
+        pandas_boolean = pd.Series([True]).iloc[0]
+        with self.assertRaisesRegex(ValueError, "不能使用布尔值代替"):
+            CellCulture("a549", viable_cells=pandas_boolean)
+        cell = CellCulture("a549")
+        with self.assertRaisesRegex(ValueError, "培养单步时长"):
+            cell.step(pandas_boolean)
+        before = cell.snapshot()
+        with self.assertRaisesRegex(ValueError, "不能使用布尔值代替"):
+            cell.add_drug(pandas_boolean)
+        self.assertEqual(cell.snapshot(), before)
 
     def test_boolean_culture_actions_are_rejected_without_state_changes(self) -> None:
         cell = CellCulture("a549")

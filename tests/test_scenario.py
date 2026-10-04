@@ -32,6 +32,10 @@ class ScenarioTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "场景(总时长|步长)"):
                     export_scenario(cell, duration_h=duration, dt_h=step)
 
+        pandas_boolean = __import__("pandas").Series([True]).iloc[0]
+        with self.assertRaisesRegex(ValueError, "场景总时长和步长必须是数值"):
+            export_scenario(cell, duration_h=pandas_boolean)
+
     def test_export_normalizes_valid_run_window_to_numeric_values(self):
         payload = export_scenario(CellCulture("a549"), duration_h="48", dt_h="0.5")
         self.assertEqual(payload["run"], {"duration_h": 48.0, "dt_h": 0.5})

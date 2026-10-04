@@ -14,7 +14,7 @@ from math import isfinite
 from typing import Dict, TYPE_CHECKING
 
 from microenvironment import MicroenvironmentState
-from numeric_utils import checked_time_advance
+from numeric_utils import checked_time_advance, is_boolean_scalar
 
 if TYPE_CHECKING:
     from cell import CellCulture
@@ -30,7 +30,7 @@ def _bounded(value: float, low: float = 0.0, high: float = 100.0) -> float:
 def _teaching_intensity(value: float) -> float:
     """Validate a relative teaching pulse, not an experimental dose."""
 
-    if isinstance(value, bool):
+    if is_boolean_scalar(value):
         raise ValueError("教学干预强度必须是有限非负数。")
     try:
         intensity = float(value)
@@ -100,7 +100,7 @@ class IntracellularState:
         以减少同一时长因调用方式不同而产生的离散差异；这不是实验采样频率建议。
         """
 
-        if isinstance(dt_h, bool):
+        if is_boolean_scalar(dt_h):
             raise ValueError("单细胞单步时长必须是 0–6 h 内的有限数值。")
         try:
             dt_h = float(dt_h)

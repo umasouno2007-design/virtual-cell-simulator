@@ -12,7 +12,7 @@ from math import exp, isfinite
 
 from intracellular import MAX_INTERNAL_STEP_H, IntracellularState
 from microenvironment import MicroenvironmentState
-from numeric_utils import checked_time_advance, clamp_finite as _clamp
+from numeric_utils import checked_time_advance, clamp_finite as _clamp, is_boolean_scalar
 
 
 @dataclass
@@ -100,7 +100,7 @@ class MicrocolonyState:
 
         if not self.finite():
             raise ValueError("微型细胞群包含越界或非有限状态；请重置或重新载入有效场景。")
-        if isinstance(dt_h, bool):
+        if is_boolean_scalar(dt_h):
             raise ValueError("微群体单步时长必须是 0–6 h 内的有限数值。")
         try:
             dt_h = float(dt_h)
@@ -264,7 +264,7 @@ class MicrocolonyState:
                 type(self.cell_count) is not int
                 or not 3 <= self.cell_count <= 50
                 or type(self.communication_enabled) is not bool
-                or isinstance(self.time_h, bool)
+                or is_boolean_scalar(self.time_h)
                 or len(self.cells) != self.cell_count
                 or not isfinite(float(self.time_h))
                 or self.time_h < 0

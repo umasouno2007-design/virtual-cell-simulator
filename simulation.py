@@ -4,6 +4,7 @@ from math import isfinite
 from typing import Dict, List
 
 from cell import CellCulture, ModelParameters
+from numeric_utils import is_boolean_scalar
 
 
 History = List[Dict[str, float | str]]
@@ -66,7 +67,7 @@ def run_steps(
 
     if type(steps) is not int or steps < 0:
         raise ValueError("模拟步数必须是非负整数。")
-    if isinstance(dt_h, bool):
+    if is_boolean_scalar(dt_h):
         raise ValueError("每步时长必须是 0–6 h 内的有限正数。")
     try:
         step_hours = float(dt_h)

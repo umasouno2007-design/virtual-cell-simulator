@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from cell import CellCulture, ModelParameters
 from json_payload import decode_json_object
 from profiles import CELL_PROFILES
+from numeric_utils import is_boolean_scalar
 from version import MODEL_VERSION, SCENARIO_SCHEMA_VERSION
 
 REQUIRED = {"schema", "model_version", "created_at", "cell", "environment", "parameters", "run", "events", "evidence_level"}
@@ -37,7 +38,7 @@ SCHEDULED_EVENT_BOUNDS = {
 def _scenario_float(value):
     """Parse a JSON numeric field without treating booleans as 0/1."""
 
-    if isinstance(value, bool):
+    if is_boolean_scalar(value):
         raise TypeError("布尔值不是数值输入。")
     try:
         return float(value)

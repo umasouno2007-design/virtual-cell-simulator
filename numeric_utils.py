@@ -5,6 +5,15 @@ from __future__ import annotations
 from math import isfinite
 
 
+def is_boolean_scalar(value: object) -> bool:
+    """Recognize Python bool and NumPy scalar bool without importing NumPy."""
+
+    value_type = type(value)
+    return isinstance(value, bool) or (
+        value_type.__module__ == "numpy" and value_type.__name__ == "bool"
+    )
+
+
 def clamp_finite(value: float, low: float = 0.0, high: float = 100.0) -> float:
     """Convert a numeric value to float and clamp it, mapping non-finite values to low.
 
@@ -19,7 +28,7 @@ def clamp_finite(value: float, low: float = 0.0, high: float = 100.0) -> float:
 def checked_time_advance(current_h: float, delta_h: float) -> float:
     """Return a representable later model time in hours, or fail before mutation."""
 
-    if isinstance(current_h, bool) or isinstance(delta_h, bool):
+    if is_boolean_scalar(current_h) or is_boolean_scalar(delta_h):
         raise ValueError("模拟时钟无法安全推进；请重置或载入有效状态。")
     try:
         current = float(current_h)

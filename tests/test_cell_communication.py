@@ -3,6 +3,7 @@
 import copy
 import math
 import unittest
+import pandas as pd
 
 from cell_communication import CellCommunicationState, representative_subpopulation_points
 from intracellular import IntracellularState
@@ -15,6 +16,14 @@ class CellCommunicationTests(unittest.TestCase):
         before = state.snapshot()
         with self.assertRaisesRegex(ValueError, "通信层时间步长"):
             state.step(IntracellularState(), 10**10000)
+        self.assertEqual(state.snapshot(), before)
+
+    def test_pandas_boolean_scalar_is_not_a_communication_duration(self) -> None:
+        pandas_boolean = pd.Series([True]).iloc[0]
+        state = CellCommunicationState()
+        before = state.snapshot()
+        with self.assertRaisesRegex(ValueError, "通信层时间步长"):
+            state.step(IntracellularState(), pandas_boolean)
         self.assertEqual(state.snapshot(), before)
 
     def test_unrepresentably_large_index_is_rejected_without_state_changes(self) -> None:

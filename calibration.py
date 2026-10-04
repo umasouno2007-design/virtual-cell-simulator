@@ -9,6 +9,7 @@ from cell import CellCulture, ModelParameters
 from data_quality import quality_report
 from experiment_data import FIELD_LABELS, comparison_frame, residual_summary
 from version import MODEL_VERSION
+from numeric_utils import is_boolean_scalar
 
 
 FIT_FIELDS = ("viable_cells", "glucose_mM", "lactate_mM")
@@ -132,7 +133,7 @@ def fit_growth_and_uptake(
     if not eligible:
         raise ValueError("请至少提供活细胞数、葡萄糖或乳酸中的一个指标，且不少于两个时间点。")
     try:
-        if any(isinstance(value, bool) for value in (weights or {}).values()):
+        if any(is_boolean_scalar(value) for value in (weights or {}).values()):
             raise TypeError("布尔权重不是数值输入。")
         resolved_weights = {field: float((weights or {}).get(field, 1.0)) for field in FIT_FIELDS}
     except (TypeError, ValueError, OverflowError):

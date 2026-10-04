@@ -13,7 +13,7 @@ from math import ceil, exp, isclose, isfinite, sqrt
 from typing import TYPE_CHECKING
 
 from intracellular import MAX_INTERNAL_STEP_H, IntracellularState
-from numeric_utils import checked_time_advance, clamp_finite as _clamp
+from numeric_utils import checked_time_advance, clamp_finite as _clamp, is_boolean_scalar
 
 if TYPE_CHECKING:
     from intracellular import IntracellularState
@@ -80,7 +80,7 @@ class CellCommunicationState:
         有界的教学性反馈，且不会改变主培养动力学 ``CellCulture``。
         """
 
-        if isinstance(dt_h, bool):
+        if is_boolean_scalar(dt_h):
             raise ValueError("通信层时间步长必须是 0–24 h 内的有限数值。")
         try:
             dt_h = float(dt_h)

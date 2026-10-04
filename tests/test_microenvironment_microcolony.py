@@ -3,6 +3,7 @@
 import copy
 import math
 import unittest
+import pandas as pd
 
 from cell import CellCulture
 from intracellular import MAX_INTERNAL_STEP_H, IntracellularState
@@ -71,6 +72,16 @@ class MicroenvironmentAndMicrocolonyTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "不能使用布尔值代替"):
                     source.normalized()
                 self.assertEqual(source.__dict__, before)
+
+    def test_pandas_boolean_scalar_is_rejected_by_microenvironment_and_single_cell(self) -> None:
+        pandas_boolean = pd.Series([True]).iloc[0]
+        environment = MicroenvironmentState(glucose_mm=pandas_boolean)
+        before = dict(environment.__dict__)
+        with self.assertRaisesRegex(ValueError, "不能使用布尔值代替"):
+            environment.normalized()
+        self.assertEqual(environment.__dict__, before)
+        with self.assertRaisesRegex(ValueError, "单细胞单步时长"):
+            IntracellularState().step(MicroenvironmentState(), pandas_boolean)
 
     def test_single_cell_rejects_boolean_environment_before_progress(self) -> None:
         environment = MicroenvironmentState(glucose_mm=True)

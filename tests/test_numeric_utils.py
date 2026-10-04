@@ -1,6 +1,7 @@
 """Shared numerical helper boundaries."""
 
 import unittest
+import pandas as pd
 
 from numeric_utils import checked_time_advance, clamp_finite
 
@@ -22,6 +23,13 @@ class ClampFiniteTests(unittest.TestCase):
             checked_time_advance(True, 0.25)
         with self.assertRaisesRegex(ValueError, "模拟时钟无法安全推进"):
             checked_time_advance(0.0, False)
+
+    def test_numpy_boolean_clock_values_are_not_accepted_as_numeric_time(self) -> None:
+        pandas_boolean = pd.Series([True]).iloc[0]
+        with self.assertRaisesRegex(ValueError, "模拟时钟无法安全推进"):
+            checked_time_advance(pandas_boolean, 0.25)
+        with self.assertRaisesRegex(ValueError, "模拟时钟无法安全推进"):
+            checked_time_advance(0.0, pandas_boolean)
 
 
 if __name__ == "__main__":
