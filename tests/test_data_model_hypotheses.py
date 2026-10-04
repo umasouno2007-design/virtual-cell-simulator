@@ -4,6 +4,7 @@ import json
 import csv
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 from data_model_hypotheses import (
@@ -232,7 +233,13 @@ class DataModelHypothesesTestCase(unittest.TestCase):
             first_json = json_path.read_bytes()
             first_csv = csv_path.read_bytes()
             second_json, second_csv = run_scenario(output_dir)
-            self.assertEqual(first_json, second_json.read_bytes())
+            first_payload = json.loads(first_json)
+            second_payload = json.loads(second_json.read_bytes())
+            first_created_at = first_payload.pop("created_at")
+            second_created_at = second_payload.pop("created_at")
+            datetime.fromisoformat(first_created_at)
+            datetime.fromisoformat(second_created_at)
+            self.assertEqual(first_payload, second_payload)
             self.assertEqual(first_csv, second_csv.read_bytes())
             with second_csv.open(encoding="utf-8-sig", newline="") as stream:
                 rows = list(csv.DictReader(stream))

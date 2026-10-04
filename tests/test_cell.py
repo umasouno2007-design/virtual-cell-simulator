@@ -226,6 +226,22 @@ class CellCultureTestCase(unittest.TestCase):
             cell.step(0.25)
         self.assertEqual(cell.snapshot(), before)
 
+    def test_boolean_culture_state_fields_are_rejected_before_state_changes(self) -> None:
+        numeric_fields = (
+            "viable_cells", "dead_cells", "glucose_mm", "glutamine_mm",
+            "lactate_mm", "oxygen_percent", "drug_um", "oxygen_setpoint_percent",
+            "ph", "temperature_c", "co2_percent", "osmolality_mosm_kg",
+            "energy_index", "last_growth_rate_per_h", "last_death_rate_per_h",
+        )
+        for field in numeric_fields:
+            with self.subTest(field=field):
+                cell = CellCulture("a549")
+                setattr(cell, field, True)
+                before = cell.snapshot()
+                with self.assertRaisesRegex(ValueError, f"培养状态 {field}"):
+                    cell.step(0.25)
+                self.assertEqual(cell.snapshot(), before)
+
     def test_large_finite_cell_counts_do_not_fake_zero_viability_or_overflow(self) -> None:
         cell = CellCulture("hela", viable_cells=1.7e308)
         cell.dead_cells = 1.7e308

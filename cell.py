@@ -185,6 +185,15 @@ class CellCulture:
             return
         if isinstance(self.time_h, bool):
             raise ValueError("模拟时钟无法安全推进；请重置或载入有效状态。")
+        numeric_state_fields = (
+            "viable_cells", "dead_cells", "glucose_mm", "glutamine_mm",
+            "lactate_mm", "oxygen_percent", "drug_um", "oxygen_setpoint_percent",
+            "ph", "temperature_c", "co2_percent", "osmolality_mosm_kg",
+            "energy_index", "last_growth_rate_per_h", "last_death_rate_per_h",
+        )
+        for name in numeric_state_fields:
+            if isinstance(getattr(self, name), bool):
+                raise ValueError(f"培养状态 {name} 不能使用布尔值代替数值；请重置或载入有效状态。")
         was_alive = self.alive
         current_time_h = _finite_nonnegative(self.time_h)
         next_time_h = checked_time_advance(current_time_h, dt_h) if was_alive else None
