@@ -47,7 +47,10 @@ class CellCommunicationState:
             raw = getattr(self, name)
             if isinstance(raw, bool) or not isinstance(raw, (int, float)):
                 return False
-            value = float(raw)
+            try:
+                value = float(raw)
+            except OverflowError:
+                return False
             if not isfinite(value):
                 return False
             values[name] = value

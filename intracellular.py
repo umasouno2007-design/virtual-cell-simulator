@@ -73,7 +73,11 @@ class IntracellularState:
         values.extend(getattr(self, name) for name in percent_fields)
         if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in values):
             return False
-        if not all(isfinite(float(value)) for value in values):
+        try:
+            finite_values = all(isfinite(float(value)) for value in values)
+        except OverflowError:
+            return False
+        if not finite_values:
             return False
         if self.time_h < 0.0 or not 50.0 <= self.cytosolic_calcium_nm <= 1200.0:
             return False
