@@ -53,6 +53,25 @@ class CellCultureTestCase(unittest.TestCase):
                     action()
                 self.assertEqual(cell.snapshot(), before)
 
+    def test_unrepresentably_large_constructor_and_action_values_are_handled_safely(self) -> None:
+        huge = 10**10000
+        cell = CellCulture(
+            "a549", culture_volume_ml=huge, surface_area_cm2=huge, viable_cells=huge,
+        )
+        self.assertEqual(cell.culture_volume_ml, 0.1)
+        self.assertEqual(cell.surface_area_cm2, 0.1)
+        self.assertEqual(cell.viable_cells, 0.0)
+        before = cell.snapshot()
+        for action in (
+            lambda: cell.exchange_medium(huge),
+            lambda: cell.add_drug(huge),
+            lambda: cell.add_glucose(huge),
+        ):
+            with self.subTest(action=action):
+                with self.assertRaisesRegex(ValueError, "有限数值"):
+                    action()
+                self.assertEqual(cell.snapshot(), before)
+
     def test_medium_exchange_is_atomic_when_a_late_field_is_invalid(self) -> None:
         cell = CellCulture("a549")
         cell.glucose_mm = 2.0

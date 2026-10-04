@@ -14,7 +14,7 @@ def _finite_nonnegative(value: float, fallback: float = 0.0) -> float:
 
     try:
         number = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return fallback
     return number if isfinite(number) and number >= 0.0 else fallback
 
@@ -26,7 +26,7 @@ def _finite_action_amount(value: float, label: str) -> float:
         raise ValueError(f"{label}必须是有限数值，不能使用布尔值代替。")
     try:
         amount = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise ValueError(f"{label}必须是有限数值。") from None
     if not isfinite(amount):
         raise ValueError(f"{label}必须是有限数值。")
