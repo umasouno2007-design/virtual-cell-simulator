@@ -123,6 +123,8 @@ class ExperimentDataTestCase(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "5 MiB"):
             standardize_measurements(b"x" * (MAX_CSV_BYTES + 1))
+        with self.assertRaisesRegex(ValueError, "5 MiB"):
+            standardize_measurements(bytearray(MAX_CSV_BYTES + 1))
         rows = b"time_h,viable_cells\n" + b"0,100\n" * (MAX_CSV_ROWS + 1)
         with self.assertRaisesRegex(ValueError, "行解析上限"):
             standardize_measurements(rows)

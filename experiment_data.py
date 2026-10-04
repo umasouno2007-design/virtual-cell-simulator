@@ -56,9 +56,9 @@ def _read_csv(contents: bytes) -> pd.DataFrame:
 
     if not isinstance(contents, (bytes, bytearray)):
         raise ValueError("CSV 文件内容无效；请重新选择 CSV 文件后重试。")
-    contents = bytes(contents)
     if len(contents) > MAX_CSV_BYTES:
         raise ValueError("CSV 超过当前在线原型的 5 MiB 解析上限；请保留原始文件并上传所需时间序列副本。")
+    contents = bytes(contents)
     last_error: UnicodeDecodeError | None = None
     for encoding in ("utf-8-sig", "gb18030"):
         try:
