@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 import sys
+import tomllib
 from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +25,7 @@ from data_model_hypotheses import (
     validate_local_hypothesis_mapping,
 )
 from experiment_manifest import build_manifest
+from experiment_data import MAX_CSV_BYTES
 from intracellular import IntracellularState
 from intracellular_forecast import forecast_intracellular_state
 from microcolony import MicrocolonyState
@@ -60,6 +62,10 @@ def _single_cell_run() -> tuple[IntracellularState, MicroenvironmentState, list[
 
 
 def main() -> None:
+    streamlit_config = tomllib.loads((ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8"))
+    configured_upload_limit = streamlit_config.get("server", {}).get("maxUploadSize")
+    assert isinstance(configured_upload_limit, int)
+    assert configured_upload_limit * 1024 * 1024 == MAX_CSV_BYTES
     assert (ROOT / "data" / "a549_teaching_synthetic.csv").is_file()
     example_scene = ROOT / "data" / "example_a549_scenario.json"
     assert example_scene.is_file()

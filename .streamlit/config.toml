@@ -4,6 +4,7 @@ gatherUsageStats = false
 [server]
 headless = true
 enableStaticServing = true
+maxUploadSize = 5
 
 [theme]
 primaryColor = "#1F8A8A"
