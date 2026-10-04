@@ -188,6 +188,9 @@ class CellCulture:
         was_alive = self.alive
         current_time_h = _finite_nonnegative(self.time_h)
         next_time_h = checked_time_advance(current_time_h, dt_h) if was_alive else None
+        # Validate user-editable model parameters before repairing any mutable state.
+        # This keeps a failed step atomic when both the parameters and snapshot are bad.
+        self._validate_finite_parameters()
         # 状态可来自 CSV/恢复文件；推进前统一裁剪，避免单个无效值污染后续历史。
         for name in ("viable_cells", "dead_cells", "glucose_mm", "glutamine_mm", "lactate_mm", "oxygen_percent", "drug_um"):
             setattr(self, name, _finite_nonnegative(getattr(self, name)))

@@ -200,6 +200,16 @@ class CellCultureTestCase(unittest.TestCase):
                     cell.step(1.0)
                 self.assertEqual(cell.time_h, 0.0)
 
+    def test_invalid_model_parameter_does_not_partially_repair_culture_state(self) -> None:
+        cell = CellCulture("hela")
+        cell.glucose_mm = -2.0
+        cell.oxygen_setpoint_percent = 30.0
+        cell.parameters.growth_scale = float("nan")
+        before = cell.snapshot()
+        with self.assertRaisesRegex(ValueError, "growth_scale"):
+            cell.step(1.0)
+        self.assertEqual(cell.snapshot(), before)
+
     def test_culture_clock_precision_loss_is_rejected_before_state_changes(self) -> None:
         cell = CellCulture("hela")
         cell.time_h = 1e20
