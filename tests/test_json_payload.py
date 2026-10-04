@@ -38,6 +38,13 @@ class JsonPayloadTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "无法解析的数值或结构"):
             decode_json_object(content)
 
+    def test_unpaired_surrogate_is_rejected_but_valid_unicode_is_preserved(self) -> None:
+        with self.assertRaisesRegex(ValueError, "无效 Unicode 字符"):
+            decode_json_object(r'{"label":"\ud800"}')
+        self.assertEqual(decode_json_object(r'{"label":"\ud83d\ude00"}'), {"label": "😀"})
+        with self.assertRaisesRegex(ValueError, "无效 Unicode 字符"):
+            decode_json_object({"nested": ["\udfff"]})
+
 
 if __name__ == "__main__":
     unittest.main()

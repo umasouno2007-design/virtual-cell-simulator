@@ -28,6 +28,24 @@ def decode_json_object(payload: bytes | str | dict) -> dict:
             raise ValueError("场景 JSON 含有无法解析的数值或结构。") from None
     if not isinstance(payload, dict):
         raise ValueError("场景根节点必须是 JSON 对象。")
+    pending: list[object] = [payload]
+    visited_containers: set[int] = set()
+    while pending:
+        value = pending.pop()
+        if isinstance(value, str):
+            if any("\ud800" <= character <= "\udfff" for character in value):
+                raise ValueError("场景 JSON 含有无效 Unicode 字符；请以 UTF-8 重新导出文件。")
+        elif isinstance(value, dict):
+            identity = id(value)
+            if identity not in visited_containers:
+                visited_containers.add(identity)
+                pending.extend(value.keys())
+                pending.extend(value.values())
+        elif isinstance(value, list):
+            identity = id(value)
+            if identity not in visited_containers:
+                visited_containers.add(identity)
+                pending.extend(value)
     return payload
 
 
