@@ -25,6 +25,17 @@ class CalibrationTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "校准观测"):
             fit_with_temporal_holdout(cell, [cell.snapshot()], None)
 
+    def test_temporal_holdout_rejects_malformed_history_container(self) -> None:
+        cell = CellCulture("hela")
+        measurements = pd.DataFrame({
+            "time_h": [0.0, 12.0, 24.0],
+            "viable_cells": [100.0, 110.0, 120.0],
+        })
+        for malformed in ("not a history", [None], ["snapshot"]):
+            with self.subTest(history=malformed):
+                with self.assertRaisesRegex(ValueError, "模拟历史必须是由状态快照"):
+                    fit_with_temporal_holdout(cell, malformed, measurements)
+
     def test_temporal_holdout_rejects_boolean_time_before_numeric_conversion(self) -> None:
         cell = CellCulture("hela")
         measurements = pd.DataFrame({

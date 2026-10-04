@@ -273,6 +273,10 @@ def fit_growth_and_uptake(
 
     if not isinstance(template, CellCulture):
         raise ValueError("校准模板必须是有效的培养状态对象。")
+    if not isinstance(model_history, (list, tuple)) or any(
+        not isinstance(row, dict) for row in model_history
+    ):
+        raise ValueError("模拟历史必须是由状态快照组成的列表。")
     if not isinstance(measurements, pd.DataFrame):
         raise ValueError("校准观测必须是已标准化的 Pandas 表格。")
     if events is not None and (
@@ -409,6 +413,10 @@ def fit_with_temporal_holdout(
 
     if not isinstance(template, CellCulture):
         raise ValueError("校准模板必须是有效的培养状态对象。")
+    if not isinstance(model_history, (list, tuple)) or any(
+        not isinstance(row, dict) for row in model_history
+    ):
+        raise ValueError("模拟历史必须是由状态快照组成的列表。")
     if not isinstance(measurements, pd.DataFrame):
         raise ValueError("校准观测必须是已标准化的 Pandas 表格。")
     if len(measurements) > MAX_CSV_ROWS:
