@@ -9,7 +9,7 @@ import pandas as pd
 
 from cell import CellCulture, ModelParameters
 from data_quality import numeric_series, quality_report
-from experiment_data import FIELD_LABELS, comparison_frame, residual_summary
+from experiment_data import FIELD_LABELS, MAX_CSV_ROWS, comparison_frame, residual_summary
 from version import MODEL_VERSION
 from numeric_utils import is_boolean_scalar
 
@@ -281,6 +281,10 @@ def fit_growth_and_uptake(
         raise ValueError("校准干预记录必须是事件对象列表。")
     if len(measurements) < 2:
         raise ValueError("粗校准至少需要两个实测时间点。")
+    if len(measurements) > MAX_CSV_ROWS:
+        raise ValueError(
+            f"单次粗校准最多接受 {MAX_CSV_ROWS:,} 行观测；请核对数据并分段分析。"
+        )
     eligible = [
         field for field in FIT_FIELDS
         if field in measurements and numeric_series(measurements[field]).notna().sum() >= 2
@@ -407,6 +411,10 @@ def fit_with_temporal_holdout(
         raise ValueError("校准模板必须是有效的培养状态对象。")
     if not isinstance(measurements, pd.DataFrame):
         raise ValueError("校准观测必须是已标准化的 Pandas 表格。")
+    if len(measurements) > MAX_CSV_ROWS:
+        raise ValueError(
+            f"单次粗校准最多接受 {MAX_CSV_ROWS:,} 行观测；请核对数据并分段分析。"
+        )
     if "time_h" not in measurements:
         raise ValueError("实测数据缺少 time_h 列，无法划分训练与留出时间点。")
     if measurements["time_h"].map(

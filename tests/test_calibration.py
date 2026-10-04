@@ -286,6 +286,18 @@ class CalibrationTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "最长支持"):
             fit_with_temporal_holdout(cell, [cell.snapshot()], measurements)
 
+    def test_calibration_entries_enforce_csv_row_resource_cap(self) -> None:
+        cell = CellCulture("hela")
+        times = list(range(5_001))
+        measurements = pd.DataFrame({
+            "time_h": times,
+            "viable_cells": [100.0 + value for value in times],
+        })
+        for fit in (fit_growth_and_uptake, fit_with_temporal_holdout):
+            with self.subTest(fit=fit.__name__):
+                with self.assertRaisesRegex(ValueError, "最多接受 5,000 行观测"):
+                    fit(cell, [cell.snapshot()], measurements)
+
     def test_direct_grid_search_rejects_duplicate_measurement_time(self) -> None:
         cell = CellCulture("hela")
         measurements = pd.DataFrame({
