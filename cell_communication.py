@@ -14,16 +14,10 @@ from typing import TYPE_CHECKING
 
 from intracellular import MAX_INTERNAL_STEP_H
 from microenvironment import checked_time_advance
+from numeric_utils import clamp_finite as _clamp
 
 if TYPE_CHECKING:
     from intracellular import IntracellularState
-
-
-def _clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
-    """将教学性相对指数限制在有限范围内。"""
-
-    numeric = float(value)
-    return max(low, min(high, numeric)) if isfinite(numeric) else low
 
 
 @dataclass

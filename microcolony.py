@@ -10,9 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from math import exp, isfinite
 
-from cell_communication import _clamp
 from intracellular import MAX_INTERNAL_STEP_H, IntracellularState
 from microenvironment import MicroenvironmentState, checked_time_advance
+from numeric_utils import clamp_finite as _clamp
 
 
 @dataclass
