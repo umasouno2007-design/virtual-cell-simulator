@@ -33,6 +33,18 @@ class DataQualityTests(unittest.TestCase):
         bad_value = quality_report(pd.DataFrame({"time_h": [0, 24, 48], "glucose_mM": [10, float("inf"), 8]}))
         self.assertTrue(any("无穷值" in item[0] for item in bad_value["blocked"]))
 
+    def test_boolean_time_and_measurement_are_not_accepted_as_numeric_zero_or_one(self):
+        boolean_time = quality_report(pd.DataFrame({
+            "time_h": [False, True, False], "viable_cells": [100, 120, 140],
+        }))
+        self.assertTrue(any("时间列包含布尔值" in issue for issue, _ in boolean_time["blocked"]))
+
+        boolean_measurement = quality_report(pd.DataFrame({
+            "time_h": [0, 24, 48], "viable_cells": [True, False, True],
+        }))
+        self.assertTrue(any("活细胞数包含布尔值" in issue for issue, _ in boolean_measurement["blocked"]))
+        self.assertTrue(any("缺少可校准指标" in issue for issue, _ in boolean_measurement["blocked"]))
+
     def test_missing_measurement_values_are_reported_as_warning(self):
         result = quality_report(pd.DataFrame({"time_h": [0, 24, 48], "glucose_mM": [10, None, 8]}))
         self.assertTrue(any("缺失值" in item[0] for item in result["warnings"]))

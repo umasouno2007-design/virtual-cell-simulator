@@ -14,6 +14,11 @@ def quality_report(data: pd.DataFrame) -> dict:
     if "time_h" not in data or data.empty:
         blocked.append(("缺少可用时间列", "提供至少两个数值 time_h 时间点。"))
     else:
+        time_is_boolean = data["time_h"].map(
+            lambda value: pd.api.types.is_bool_dtype(type(value)) if pd.notna(value) else False
+        )
+        if time_is_boolean.any():
+            blocked.append(("时间列包含布尔值", "时间必须是以小时表示的数值；True/False 不能作为 0/1 小时使用。"))
         invalid_source_times = int(data.attrs.get("invalid_time_count", 0))
         if invalid_source_times:
             blocked.append((
@@ -46,10 +51,20 @@ def quality_report(data: pd.DataFrame) -> dict:
     checked_fields = ("viable_cells", "viability_percent", "glucose_mM", "lactate_mM", "oxygen_percent", "pH")
     invalid_numeric_counts = data.attrs.get("invalid_numeric_counts", {})
     explicit_missing_tokens = {"", "na", "n/a", "null", "nan", "none"}
+    boolean_fields: set[str] = set()
     for field in checked_fields:
         if field not in data:
             continue
         raw_values = data[field]
+        boolean_values = raw_values.map(
+            lambda value: pd.api.types.is_bool_dtype(type(value)) if pd.notna(value) else False
+        )
+        if boolean_values.any():
+            boolean_fields.add(field)
+            blocked.append((
+                f"{FIELD_LABELS[field]}包含布尔值",
+                "测量指标必须使用带正确单位的数值；True/False 不会作为 0/1 测量值接受。",
+            ))
         values = pd.to_numeric(raw_values, errors="coerce")
         direct_invalid = raw_values.notna() & values.isna() & ~raw_values.astype(str).str.strip().str.lower().isin(explicit_missing_tokens)
         invalid_count = max(int(invalid_numeric_counts.get(field, 0)), int(direct_invalid.sum()))
@@ -91,7 +106,8 @@ def quality_report(data: pd.DataFrame) -> dict:
             ))
     available = [
         field for field in ("viable_cells", "glucose_mM", "lactate_mM")
-        if field in data and pd.to_numeric(data[field], errors="coerce").notna().sum() >= 2
+        if field in data and field not in boolean_fields
+        and pd.to_numeric(data[field], errors="coerce").notna().sum() >= 2
     ]
     if not available: blocked.append(("缺少可校准指标", "至少提供活细胞数、葡萄糖或乳酸中的一个，且有两个时间点。"))
     else: passed.append(("可校准指标", "、".join(FIELD_LABELS[f] for f in available)))
