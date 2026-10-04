@@ -334,7 +334,9 @@ class CellCulture:
     def exchange_medium(self, fraction: float = 1.0) -> None:
         """更换指定比例培养基，1.0 表示全量换液。"""
 
-        fraction = min(1.0, _finite_action_amount(fraction, "换液比例"))
+        fraction = _finite_action_amount(fraction, "换液比例")
+        if fraction > 1.0:
+            raise ValueError("换液比例必须在 0–1 范围内。")
         fields_to_update = (
             "glucose_mm", "glutamine_mm", "lactate_mm", "drug_um", "ph",
             "osmolality_mosm_kg",

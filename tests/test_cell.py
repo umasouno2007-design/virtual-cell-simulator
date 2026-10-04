@@ -66,6 +66,13 @@ class CellCultureTestCase(unittest.TestCase):
                     action()
                 self.assertEqual(cell.snapshot(), before)
 
+    def test_medium_exchange_rejects_fraction_above_one_without_mutation(self) -> None:
+        cell = CellCulture("a549")
+        before = cell.snapshot()
+        with self.assertRaisesRegex(ValueError, "换液比例必须在 0–1 范围内"):
+            cell.exchange_medium(1.01)
+        self.assertEqual(cell.snapshot(), before)
+
     def test_unrepresentably_large_constructor_and_action_values_are_handled_safely(self) -> None:
         huge = 10**10000
         cell = CellCulture(
