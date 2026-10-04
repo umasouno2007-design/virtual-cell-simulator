@@ -251,11 +251,19 @@ class CellCultureTestCase(unittest.TestCase):
 
     def test_invalid_model_parameter_does_not_partially_repair_culture_state(self) -> None:
         cell = CellCulture("hela")
-        cell.glucose_mm = -2.0
         cell.oxygen_setpoint_percent = 30.0
         cell.parameters.growth_scale = float("nan")
         before = cell.snapshot()
         with self.assertRaisesRegex(ValueError, "growth_scale"):
+            cell.step(1.0)
+        self.assertEqual(cell.snapshot(), before)
+
+    def test_numeric_safety_failure_rolls_back_all_pre_step_cleanup(self) -> None:
+        cell = CellCulture("hela")
+        cell.oxygen_setpoint_percent = 30.0
+        cell.parameters.growth_scale = 1e6
+        before = cell.snapshot()
+        with self.assertRaisesRegex(ValueError, "增长指数超出"):
             cell.step(1.0)
         self.assertEqual(cell.snapshot(), before)
 

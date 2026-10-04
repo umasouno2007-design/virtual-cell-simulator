@@ -171,6 +171,18 @@ class CellCulture:
         }
 
     def step(self, dt_h: float = 1.0) -> None:
+        """原子地推进一次培养状态；失败时恢复推进前的全部字段。"""
+
+        before = self.__dict__.copy()
+        try:
+            self._step_in_place(dt_h)
+        except Exception:
+            # step 内不会修改 profile/parameters 对象本身，因此浅快照足以恢复状态。
+            self.__dict__.clear()
+            self.__dict__.update(before)
+            raise
+
+    def _step_in_place(self, dt_h: float = 1.0) -> None:
         """推进 0–6 h；越界时长抛错，实验预测前必须重新拟合参数。"""
 
         if isinstance(dt_h, bool):
