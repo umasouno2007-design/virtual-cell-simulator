@@ -12,7 +12,7 @@ from math import exp, isfinite
 
 from cell_communication import _clamp
 from intracellular import MAX_INTERNAL_STEP_H, IntracellularState
-from microenvironment import MicroenvironmentState
+from microenvironment import MicroenvironmentState, checked_time_advance
 
 
 @dataclass
@@ -112,6 +112,7 @@ class MicrocolonyState:
             raise ValueError("微群体单步时长不能超过 6 h；请分步推进。")
         if dt_h == 0.0:
             return
+        next_time_h = checked_time_advance(self.time_h, dt_h)
         if dt_h > MAX_INTERNAL_STEP_H:
             remaining_h = dt_h
             while remaining_h > 1e-12:
@@ -143,7 +144,7 @@ class MicrocolonyState:
                 cell.state.er_stress_percent = _clamp(cell.state.er_stress_percent + 0.8 * scaled)
                 cell.state.growth_signal_percent = _clamp(cell.state.growth_signal_percent - 0.75 * scaled)
                 cell.state.apoptosis_signal_percent = _clamp(cell.state.apoptosis_signal_percent + 0.55 * scaled)
-        self.time_h += dt_h
+        self.time_h = next_time_h
         self._record_snapshot(environment)
 
     def _record_snapshot(self, environment: MicroenvironmentState | None = None) -> None:

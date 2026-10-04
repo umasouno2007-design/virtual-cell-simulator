@@ -53,6 +53,17 @@ class MicroenvironmentAndMicrocolonyTests(unittest.TestCase):
         self.assertEqual(state.time_h, 0.0)
         self.assertEqual(colony.time_h, 0.0)
 
+    def test_colony_clock_precision_loss_is_rejected_before_any_cell_changes(self) -> None:
+        colony = MicrocolonyState(cell_count=3)
+        colony.time_h = 1e20
+        for cell in colony.cells:
+            cell.state.time_h = colony.time_h
+        before = [cell.state.snapshot() for cell in colony.cells]
+        with self.assertRaisesRegex(ValueError, "模拟时钟无法安全推进"):
+            colony.step(MicroenvironmentState(), 0.25)
+        self.assertEqual(colony.time_h, 1e20)
+        self.assertEqual([cell.state.snapshot() for cell in colony.cells], before)
+
     def test_culture_derived_environment_matches_direct_schema(self) -> None:
         culture = CellCulture("a549")
         derived = MicroenvironmentState.from_culture(culture)

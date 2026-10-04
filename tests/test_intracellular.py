@@ -90,6 +90,13 @@ class IntracellularStateTestCase(unittest.TestCase):
             state.step(CellCulture("hela"), 24.0)
         self.assertEqual(state.time_h, 0.0)
 
+    def test_clock_precision_loss_is_rejected_before_state_changes(self) -> None:
+        state = IntracellularState(time_h=1e20)
+        before = state.snapshot()
+        with self.assertRaisesRegex(ValueError, "模拟时钟无法安全推进"):
+            state.step(MicroenvironmentState(), 0.25)
+        self.assertEqual(state.snapshot(), before)
+
     def test_six_hour_advance_matches_six_one_hour_advances(self) -> None:
         environment = MicroenvironmentState(
             local_oxygen_availability=0.25, glucose_mm=2.0, ph=7.0, drug_um=12.0,

@@ -68,6 +68,13 @@ class CellCommunicationTests(unittest.TestCase):
         state.step(IntracellularState(), 0.0)
         self.assertEqual(state.snapshot(), before)
 
+    def test_clock_precision_loss_is_rejected_before_communication_changes(self) -> None:
+        state = CellCommunicationState(time_h=1e20)
+        before = state.snapshot()
+        with self.assertRaisesRegex(ValueError, "模拟时钟无法安全推进"):
+            state.step(IntracellularState(), 0.25)
+        self.assertEqual(state.snapshot(), before)
+
     def test_response_and_proportions_remain_bounded(self) -> None:
         state = CellCommunicationState()
         stress = self.stressed_state()

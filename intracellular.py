@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from math import isfinite
 from typing import Dict, TYPE_CHECKING
 
-from microenvironment import MicroenvironmentState
+from microenvironment import MicroenvironmentState, checked_time_advance
 
 if TYPE_CHECKING:
     from cell import CellCulture
@@ -83,6 +83,7 @@ class IntracellularState:
             raise ValueError("单细胞单步时长不能超过 6 h；请分步推进。")
         if dt_h == 0.0:
             return
+        next_time_h = checked_time_advance(self.time_h, dt_h)
         if dt_h > MAX_INTERNAL_STEP_H:
             remaining_h = dt_h
             while remaining_h > 1e-12:
@@ -167,7 +168,7 @@ class IntracellularState:
         ):
             setattr(self, name, _bounded(getattr(self, name)))
         self.cytosolic_calcium_nm = _bounded(self.cytosolic_calcium_nm, 50.0, 1200.0)
-        self.time_h += dt_h
+        self.time_h = next_time_h
 
     @staticmethod
     def _phase_from_progress(progress: float) -> str:

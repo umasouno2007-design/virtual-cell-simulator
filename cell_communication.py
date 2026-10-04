@@ -13,6 +13,7 @@ from math import ceil, exp, isfinite, sqrt
 from typing import TYPE_CHECKING
 
 from intracellular import MAX_INTERNAL_STEP_H
+from microenvironment import checked_time_advance
 
 if TYPE_CHECKING:
     from intracellular import IntracellularState
@@ -65,6 +66,7 @@ class CellCommunicationState:
             raise ValueError("通信层时间步长必须是 0–24 h 内的有限数值。")
         if dt_h == 0.0:
             return
+        next_time_h = checked_time_advance(self.time_h, dt_h)
         if dt_h > MAX_INTERNAL_STEP_H:
             remaining_h = dt_h
             while remaining_h > 1e-12:
@@ -123,7 +125,7 @@ class CellCommunicationState:
             self.receiver_response_index * response_decay
             + self.stress_signal_index * (1.0 - response_decay)
         )
-        self.time_h += dt_h
+        self.time_h = next_time_h
 
         if feedback_enabled:
             self.apply_teaching_feedback(intracellular, dt_h)
