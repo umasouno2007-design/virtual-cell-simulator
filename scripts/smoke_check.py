@@ -1,4 +1,4 @@
-"""部署前无网页 smoke check：培养、单细胞、微群体与数据启发场景往返。"""
+"""部署前无网页 smoke check：培养、单细胞、微群体通信与场景往返。"""
 
 import json
 from pathlib import Path
@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from cell import CellCulture
+from cell_communication import CellCommunicationState
 from cell_scenario import (
     environment_change_event,
     export_microcolony_scenario,
@@ -129,6 +130,15 @@ def main() -> None:
     restored_colony, _ = import_microcolony_scenario(colony_payload)
     assert restored_colony.summary() == colony.summary()
     assert restored_colony.history == colony.history
+
+    # 通信层接受的最大单步也必须按一阶规则稳定衰减，而非裁剪为零。
+    communication = CellCommunicationState(
+        stress_signal_index=90.0, receiver_response_index=90.0,
+    )
+    communication.step(IntracellularState(), 24.0)
+    assert 0.0 < communication.stress_signal_index < 90.0
+    assert 0.0 < communication.receiver_response_index < 90.0
+    assert all(value >= 0.0 for value in communication.snapshot().values())
 
     # 次级教学工具只消费复制的相对状态；其输出须可在无网页环境中生成。
     forecast = forecast_intracellular_state(
