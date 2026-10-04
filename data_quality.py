@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from math import isfinite
 import pandas as pd
 
-from experiment_data import FIELD_LABELS
+from experiment_data import FIELD_LABELS, MAX_CSV_ROWS
 from version import MODEL_VERSION
 
 
@@ -33,6 +33,19 @@ def quality_report(data: pd.DataFrame) -> dict:
     """返回阻止/警告/通过项；输入为已标准化且单位已声明的 DataFrame。"""
     if not isinstance(data, pd.DataFrame):
         raise ValueError("数据质量检查需要已标准化的 Pandas 表格。")
+    if len(data) > MAX_CSV_ROWS:
+        return {
+            "model_version": MODEL_VERSION,
+            "imported_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "blocked": [(
+                f"数据行数超过当前解析上限 {MAX_CSV_ROWS:,}",
+                "请保留原始文件，并另存包含本次分析所需时间点的副本；原始数据不会被修改。",
+            )],
+            "warnings": [],
+            "passed": [],
+            "is_minimum_model_ready": False,
+            "disclaimer": "通过仅代表格式和最低建模条件，不代表实验质量认证或生物学结论有效。",
+        }
     blocked, warnings, passed = [], [], []
     invalid_metadata = False
 

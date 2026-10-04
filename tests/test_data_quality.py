@@ -5,6 +5,13 @@ from data_quality import quality_report
 
 
 class DataQualityTests(unittest.TestCase):
+    def test_direct_quality_report_enforces_csv_row_limit(self):
+        from experiment_data import MAX_CSV_ROWS
+
+        report = quality_report(pd.DataFrame({"time_h": range(MAX_CSV_ROWS + 1)}))
+        self.assertFalse(report["is_minimum_model_ready"])
+        self.assertTrue(any("超过当前解析上限" in issue for issue, _ in report["blocked"]))
+
     def test_quality_apis_reject_wrong_container_types_with_domain_errors(self):
         from data_quality import numeric_series
 
