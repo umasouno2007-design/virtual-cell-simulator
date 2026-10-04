@@ -40,6 +40,14 @@ python -m unittest tests.test_data_model_hypotheses
 
 空白 [本地数据—假设映射 JSON 模板](data/hypothesis_mapping_template.json)预留了数据集 accession、样本、组织/条件、分析版本、细胞注释、标志基因、通路评分及统计单位；其状态为 `template_only`，不包含示例观察，也禁止参数校准。取得用户授权的本地结果后，需保留数据集 accession、样本/供体与组织部位、病例定义、分析脚本版本、细胞注释来源、标志基因/通路基因集定义、评分方法、统计比较单位和不确定性。只有核实原始输出后，才能把它标记为“本地项目观察”；不得把单细胞作为细胞独立重复来替代供体重复。表达模式只生成待检验假设，不得直接更改 e-cell 参数。
 
+填写副本后，可在本机运行结构校验；该工具只读取不超过 1 MiB 的摘要 JSON，输出不含用户文件路径，不联网、不上传原始/矩阵数据、不更改文件，也不进入模型参数：
+
+```bash
+python scripts/validate_local_hypothesis_mapping.py path/to/your_mapping.json
+```
+
+若记录尚未填充，校验器会把它标记为模板而非观察结果。完整记录必须明确数据集与样本 accession、分析版本、细胞注释/基因集方法、统计单位和检查日期。额外字段（包括原始表达矩阵）会被拒绝；通过仅代表结构完整，不能证明来源、统计方法、结论或假设正确。
+
 ## 明确边界
 
 - 公开表达数据只作假设生成和方法学习，不进入 `intracellular.py`、`cell.py` 或 `cell_communication.py` 参数估计。

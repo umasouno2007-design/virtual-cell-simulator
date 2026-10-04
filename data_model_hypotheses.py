@@ -32,6 +32,145 @@ ENVIRONMENT_RANGES = {
     "doubling_time_h": (1.0, 500.0),
     "drug_ic50_uM": (1e-6, 1e6),
 }
+LOCAL_MAPPING_TOP_LEVEL_FIELDS = {
+    "schema", "status", "notice", "source", "observations", "model_mapping",
+}
+LOCAL_MAPPING_SOURCE_FIELDS = {
+    "dataset_accession", "study_citation", "sample_accessions", "tissue_and_condition",
+    "analysis_repository_or_protocol", "analysis_version_or_commit",
+    "cell_annotation_method_and_version", "pathway_gene_set_and_version",
+    "statistical_unit", "source_checked_date",
+}
+LOCAL_MAPPING_OBSERVATION_FIELDS = {
+    "cell_type", "comparison", "marker_genes", "pathway_score_name",
+    "pathway_score_method", "reported_direction", "reported_value",
+    "reported_unit", "uncertainty_or_adjusted_p_value", "data_location",
+}
+LOCAL_MAPPING_MODEL_FIELDS = {
+    "question_only", "existing_ecell_scenario_id", "mapping_evidence_grade",
+    "parameter_calibration_allowed", "unmeasured_model_quantities", "not_inferable",
+}
+
+
+def validate_local_hypothesis_mapping(payload: Any) -> dict[str, Any]:
+    """Validate a local observation-to-hypothesis record without model fitting.
+
+    The mapping file may contain aggregate result summaries and provenance, but
+    this validator never reads expression matrices or forwards observations to
+    model parameters. It returns a sanitized summary, not the submitted text.
+    """
+
+    if not isinstance(payload, dict):
+        raise ValueError("映射文件顶层必须是 JSON 对象。")
+    if set(payload) != LOCAL_MAPPING_TOP_LEVEL_FIELDS:
+        missing = LOCAL_MAPPING_TOP_LEVEL_FIELDS - payload.keys()
+        extra = payload.keys() - LOCAL_MAPPING_TOP_LEVEL_FIELDS
+        details = []
+        if missing:
+            details.append(f"缺少字段：{', '.join(sorted(missing))}")
+        if extra:
+            details.append(f"不支持的字段：{', '.join(sorted(extra))}；原始矩阵/额外数据不得放入映射文件")
+        raise ValueError("映射文件字段不符合模板：" + "；".join(details) + "。")
+    if payload.get("schema") != "e-cell-local-data-hypothesis/v1":
+        raise ValueError("不支持的本地映射格式版本。")
+    status = payload.get("status")
+    if status not in {"template_only", "local_analysis_record"}:
+        raise ValueError("status 只能是 template_only 或 local_analysis_record。")
+    if not isinstance(payload.get("notice"), str) or not payload["notice"].strip():
+        raise ValueError("notice 必须保留隐私与证据边界说明。")
+
+    source = payload.get("source")
+    model = payload.get("model_mapping")
+    observations = payload.get("observations")
+    if not isinstance(source, dict) or set(source) != LOCAL_MAPPING_SOURCE_FIELDS:
+        raise ValueError("source 必须且只能包含模板定义的来源字段。")
+    if not isinstance(model, dict) or set(model) != LOCAL_MAPPING_MODEL_FIELDS:
+        raise ValueError("model_mapping 必须且只能包含模板定义的映射字段。")
+    if not isinstance(observations, list) or not observations:
+        raise ValueError("observations 必须是至少包含一个记录的列表。")
+    if model.get("mapping_evidence_grade") != "C":
+        raise ValueError("本地数据到模型的映射必须保持 C 级假设。")
+    if model.get("parameter_calibration_allowed") is not False:
+        raise ValueError("表达或通路结果不得用于 e-cell 参数校准。")
+    for key in ("unmeasured_model_quantities", "not_inferable"):
+        values = model.get(key)
+        if not isinstance(values, list) or not all(isinstance(v, str) and v.strip() for v in values):
+            raise ValueError(f"model_mapping.{key} 必须是文本说明列表。")
+        if key == "not_inferable" and not values:
+            raise ValueError("model_mapping.not_inferable 必须列出不可推断内容。")
+
+    if status == "local_analysis_record":
+        if not isinstance(model.get("question_only"), str) or not model["question_only"].strip():
+            raise ValueError("model_mapping.question_only 必须写明待检验问题。")
+        if not model["unmeasured_model_quantities"]:
+            raise ValueError("完整记录必须写明未测量的模型量。")
+        required_source = (
+            "dataset_accession", "study_citation", "sample_accessions", "tissue_and_condition",
+            "analysis_repository_or_protocol", "analysis_version_or_commit",
+            "cell_annotation_method_and_version", "pathway_gene_set_and_version",
+            "statistical_unit", "source_checked_date",
+        )
+        for key in required_source:
+            value = source.get(key)
+            if key == "sample_accessions":
+                valid = isinstance(value, list) and bool(value) and all(isinstance(x, str) and x.strip() for x in value)
+            else:
+                valid = isinstance(value, str) and bool(value.strip())
+            if not valid:
+                raise ValueError(f"完整分析记录缺少来源字段：source.{key}。")
+        try:
+            from datetime import date
+            from re import fullmatch
+            if not fullmatch(r"\d{4}-\d{2}-\d{2}", source["source_checked_date"]):
+                raise ValueError
+            date.fromisoformat(source["source_checked_date"])
+        except (TypeError, ValueError):
+            raise ValueError("source.source_checked_date 必须使用 YYYY-MM-DD 日期格式。") from None
+        scenario_id = model.get("existing_ecell_scenario_id")
+        if scenario_id is not None and scenario_id != load_hypothesis_scenario()["id"]:
+            raise ValueError("existing_ecell_scenario_id 必须引用仓库中已存在的教学情景，或设为 null。")
+
+    for index, observation in enumerate(observations, start=1):
+        if not isinstance(observation, dict) or set(observation) != LOCAL_MAPPING_OBSERVATION_FIELDS:
+            raise ValueError(f"observations[{index}] 必须且只能包含模板定义的观察字段。")
+        if status == "local_analysis_record":
+            for key in ("cell_type", "comparison", "reported_direction", "data_location"):
+                value = observation.get(key)
+                if not isinstance(value, str) or not value.strip():
+                    raise ValueError(f"完整分析记录缺少观察字段：observations[{index}].{key}。")
+            genes = observation.get("marker_genes")
+            if not isinstance(genes, list) or not all(isinstance(gene, str) and gene.strip() for gene in genes):
+                raise ValueError(f"observations[{index}].marker_genes 必须为文本列表。")
+            if not genes and not observation.get("pathway_score_name"):
+                raise ValueError(f"observations[{index}] 至少要记录标志基因或通路评分名称。")
+            value = observation.get("reported_value")
+            if isinstance(value, bool) or not isinstance(value, (int, float, str)) or not str(value).strip():
+                raise ValueError(f"完整分析记录的 observations[{index}].reported_value 不能为空。")
+            if isinstance(value, float) and not isfinite(value):
+                raise ValueError(f"observations[{index}].reported_value 必须是有限数值。")
+
+    if status == "template_only":
+        source_has_values = any(value not in (None, "", []) for value in source.values())
+        observations_have_values = any(
+            value not in (None, "", [])
+            for observation in observations
+            for value in observation.values()
+        )
+        mapping_has_values = any(
+            model.get(key) not in (None, "", [])
+            for key in ("question_only", "existing_ecell_scenario_id", "unmeasured_model_quantities")
+        )
+        if source_has_values or observations_have_values or mapping_has_values:
+            raise ValueError("模板中已填写观察或来源内容；请将 status 改为 local_analysis_record 并补全溯源字段。")
+
+    return {
+        "status": status,
+        "observation_count": len(observations),
+        "dataset_accession_present": bool(source.get("dataset_accession")),
+        "parameter_calibration_allowed": False,
+        "mapping_evidence_grade": "C",
+        "summary": "空白模板结构有效，尚无本地观察记录。" if status == "template_only" else "本地分析记录结构有效；未校准模型参数。",
+    }
 
 
 def load_hypothesis_scenario() -> dict[str, Any]:

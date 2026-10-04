@@ -1,5 +1,6 @@
 """部署前无网页 smoke check：培养、单细胞、微群体与数据启发场景往返。"""
 
+import json
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
@@ -16,7 +17,11 @@ from cell_scenario import (
     import_single_cell_scenario,
     single_cell_history_row,
 )
-from data_model_hypotheses import export_hypothesis_scenario_json, load_hypothesis_scenario
+from data_model_hypotheses import (
+    export_hypothesis_scenario_json,
+    load_hypothesis_scenario,
+    validate_local_hypothesis_mapping,
+)
 from experiment_manifest import build_manifest
 from intracellular import IntracellularState
 from intracellular_forecast import forecast_intracellular_state
@@ -64,6 +69,10 @@ def main() -> None:
     hypothesis = load_hypothesis_scenario()
     assert hypothesis["evidence"]["model_mapping_grade"] == "C"
     assert hypothesis["evidence"]["parameter_calibration"] == "none"
+    template = json.loads(
+        (ROOT / "data" / "hypothesis_mapping_template.json").read_text(encoding="utf-8")
+    )
+    assert validate_local_hypothesis_mapping(template)["status"] == "template_only"
     inspired_payload = export_hypothesis_scenario_json()
     _, inspired_state, inspired_history, inspired_events = import_single_cell_scenario(inspired_payload)
     assert inspired_history and inspired_events[0]["event_type"] == "oxidative_stress"
