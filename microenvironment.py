@@ -76,6 +76,26 @@ class MicroenvironmentState:
 
         profile = getattr(culture, "profile")
         parameters = getattr(culture, "parameters")
+        source_values = {
+            "培养时钟": getattr(culture, "time_h"),
+            "培养氧设定": getattr(culture, "oxygen_percent"),
+            "葡萄糖": getattr(culture, "glucose_mm"),
+            "乳酸": getattr(culture, "lactate_mm"),
+            "pH": getattr(culture, "ph"),
+            "温度": getattr(culture, "temperature_c"),
+            "药物浓度": getattr(culture, "drug_um"),
+            "细胞密度": getattr(culture, "viable_cells"),
+            "参考葡萄糖": profile.initial_glucose_mm,
+            "倍增时间": profile.doubling_time_h,
+            "药物 IC50": parameters.drug_ic50_um,
+        }
+        invalid_booleans = [name for name, value in source_values.items() if isinstance(value, bool)]
+        if invalid_booleans:
+            raise ValueError(
+                "无法从培养状态派生微环境；以下数值字段不能使用布尔值代替："
+                + "、".join(invalid_booleans)
+                + "。"
+            )
         return cls(
             time_h=getattr(culture, "time_h"),
             local_oxygen_availability=_bounded(getattr(culture, "oxygen_percent") / 18.6, 0.0, 1.0),

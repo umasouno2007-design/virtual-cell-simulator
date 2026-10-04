@@ -134,6 +134,23 @@ class MicroenvironmentAndMicrocolonyTests(unittest.TestCase):
         self.assertAlmostEqual(derived.local_oxygen_availability, direct.local_oxygen_availability)
         self.assertAlmostEqual(derived.glucose_reference_mm, culture.profile.initial_glucose_mm)
 
+    def test_culture_adapter_rejects_boolean_source_fields_before_single_cell_step(self) -> None:
+        source_fields = (
+            "time_h", "oxygen_percent", "glucose_mm", "lactate_mm", "ph",
+            "temperature_c", "drug_um", "viable_cells",
+        )
+        for field in source_fields:
+            with self.subTest(field=field):
+                culture = CellCulture("a549")
+                setattr(culture, field, True)
+                culture_before = culture.snapshot()
+                state = IntracellularState()
+                state_before = state.snapshot()
+                with self.assertRaisesRegex(ValueError, "不能使用布尔值代替"):
+                    state.step(culture, 0.25)
+                self.assertEqual(culture.snapshot(), culture_before)
+                self.assertEqual(state.snapshot(), state_before)
+
     def test_legacy_culture_input_matches_explicit_microenvironment_path(self) -> None:
         culture = CellCulture("a549")
         legacy_path = IntracellularState()
