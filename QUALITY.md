@@ -72,6 +72,7 @@ CI 在 Linux Python 3.11/3.12 与 Windows Python 3.12 下先检查已安装依�
 ```bash
 python -m unittest discover -s tests -p "test_*.py"
 python scripts/smoke_check.py
+python scripts/check_repo_links.py
 python scripts/validate_a549_teaching_case.py
 ```
 

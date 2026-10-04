@@ -30,3 +30,5 @@ jobs:
         run: python -m unittest discover -s tests -p "test_*.py"
       - name: Run deployment smoke check
         run: python scripts/smoke_check.py
+      - name: Check documentation links
+        run: python scripts/check_repo_links.py
