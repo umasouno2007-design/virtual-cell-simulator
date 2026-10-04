@@ -85,6 +85,18 @@ def replay_from_initial(template: CellCulture, initial: dict, target_times, grow
         raise ValueError("校准重演起点的细胞系与当前模板不一致；请核对实验来源。")
     if initial.get("model_version") != MODEL_VERSION:
         raise ValueError("校准重演起点的模型版本不一致；不能混合不同版本结果。")
+    for source in _SNAPSHOT_FIELDS:
+        if source not in initial:
+            continue
+        raw_value = initial[source]
+        if is_boolean_scalar(raw_value):
+            raise ValueError(f"校准重演起点字段 {source} 不能使用布尔值代替数值。")
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(f"校准重演起点字段 {source} 必须是有限数值。") from None
+        if not isfinite(value):
+            raise ValueError(f"校准重演起点字段 {source} 必须是有限数值。")
     cell = _make_cell(
         template, initial, resolved_scales["growth_scale"], resolved_scales["uptake_scale"],
     )

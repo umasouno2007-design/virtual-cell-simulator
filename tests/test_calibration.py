@@ -77,6 +77,13 @@ class CalibrationTestCase(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "校准重演参数"):
                     replay_from_initial(cell, initial, [], growth, uptake)
 
+        for field, bad_value in (("time_h", True), ("viable_cells", True), ("glucose_mM", float("inf"))):
+            malformed_initial = dict(initial)
+            malformed_initial[field] = bad_value
+            with self.subTest(initial_field=field):
+                with self.assertRaisesRegex(ValueError, "校准重演起点字段"):
+                    replay_from_initial(cell, malformed_initial, [], 1.0, 1.0)
+
         measurements = pd.DataFrame({
             "time_h": [0.0, 24.0], "viable_cells": [100.0, 120.0],
         })
