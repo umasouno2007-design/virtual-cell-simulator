@@ -219,12 +219,24 @@ class CellCommunicationTests(unittest.TestCase):
     def test_fate_map_reads_the_existing_representative_apoptosis_index(self) -> None:
         communication = CellCommunicationState()
         intracellular = IntracellularState(apoptosis_signal_percent=37.5)
-        with self.assertRaisesRegex(ValueError, "必须提供当前代表性细胞状态"):
+        with self.assertRaisesRegex(ValueError, "必须提供有效的当前代表性细胞状态"):
             representative_subpopulation_points(communication, "命运倾向")
         points = representative_subpopulation_points(
             communication, "命运倾向", intracellular=intracellular,
         )
         self.assertEqual({point["value"] for point in points}, {37.5})
+
+    def test_subpopulation_map_rejects_invalid_state_and_view_types(self) -> None:
+        with self.assertRaisesRegex(ValueError, "有效且比例守恒"):
+            representative_subpopulation_points(
+                CellCommunicationState(stressed_fraction=float("nan")),
+            )
+        with self.assertRaisesRegex(ValueError, "不支持的子群地图视图"):
+            representative_subpopulation_points(CellCommunicationState(), [])
+        with self.assertRaisesRegex(ValueError, "有效的当前代表性细胞状态"):
+            representative_subpopulation_points(
+                CellCommunicationState(), "命运倾向", intracellular="invalid",
+            )
 
     def test_larger_teaching_map_keeps_all_points_inside_plot_bounds(self) -> None:
         points = representative_subpopulation_points(CellCommunicationState(), total_points=100)

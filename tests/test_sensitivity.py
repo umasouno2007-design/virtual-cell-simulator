@@ -17,6 +17,15 @@ class SensitivityTestCase(unittest.TestCase):
         self.assertGreater(result["viable_cells"].min(), 0)
         self.assertTrue(result[["viable_cells", "glucose_mM", "lactate_mM", "pH"]].notna().all().all())
 
+    def test_sensitivity_baseline_row_preserves_current_rate_observations(self) -> None:
+        cell = CellCulture("a549")
+        cell.step(2.0)
+        source_snapshot = cell.snapshot()
+        result = simulate_one_factor(cell, "growth_scale", 1.0)
+        first_row = result.iloc[0]
+        for key, value in source_snapshot.items():
+            self.assertEqual(first_row[key], value, msg=key)
+
     def test_all_default_parameters_have_endpoint_summaries(self) -> None:
         _, summary = run_sensitivity(CellCulture("hela"), 12)
         self.assertEqual(set(summary["parameter"]), set(SENSITIVITY_PARAMETERS))

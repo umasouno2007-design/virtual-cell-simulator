@@ -64,6 +64,7 @@ def _clone(cell: CellCulture) -> CellCulture:
         "dead_cells", "time_h", "glucose_mm", "glutamine_mm", "lactate_mm",
         "oxygen_percent", "oxygen_setpoint_percent", "ph", "temperature_c",
         "co2_percent", "osmolality_mosm_kg", "drug_um", "energy_index",
+        "last_growth_rate_per_h", "last_death_rate_per_h",
     ):
         setattr(clone, name, getattr(cell, name))
     return clone

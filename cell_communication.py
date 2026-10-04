@@ -213,11 +213,15 @@ def representative_subpopulation_points(
     信号释放、接收端响应或命运倾向。
     """
 
+    if not isinstance(state, CellCommunicationState) or not state.finite():
+        raise ValueError("子群地图需要有效且比例守恒的通信状态。")
     valid_views = {"子群状态", "信号释放", "接收端响应", "命运倾向"}
-    if view not in valid_views:
+    if not isinstance(view, str) or view not in valid_views:
         raise ValueError(f"不支持的子群地图视图：{view}。")
-    if view == "命运倾向" and intracellular is None:
-        raise ValueError("命运倾向视图必须提供当前代表性细胞状态。")
+    if view == "命运倾向" and (
+        not isinstance(intracellular, IntracellularState) or not intracellular.finite()
+    ):
+        raise ValueError("命运倾向视图必须提供有效的当前代表性细胞状态。")
     total_points = max(9, min(int(total_points), 100))
     injured_count = min(total_points, round(total_points * state.injured_fraction / 100.0))
     stressed_count = min(total_points - injured_count, round(total_points * state.stressed_fraction / 100.0))
