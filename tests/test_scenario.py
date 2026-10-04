@@ -25,6 +25,18 @@ class ScenarioTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "数据文件指纹"):
                     import_scenario(payload)
 
+    def test_export_rejects_invalid_or_non_reproducible_run_window(self):
+        cell = CellCulture("a549")
+        for duration, step in ((0, 1), (169, 1), (float("nan"), 1), (True, 1), (72, 0), (72, 6.1), (72, float("inf")), (72, True), (10**10000, 1)):
+            with self.subTest(duration_kind=type(duration).__name__, step=step if type(step) is not int or step < 100 else "large"):
+                with self.assertRaisesRegex(ValueError, "场景(总时长|步长)"):
+                    export_scenario(cell, duration_h=duration, dt_h=step)
+
+    def test_export_normalizes_valid_run_window_to_numeric_values(self):
+        payload = export_scenario(CellCulture("a549"), duration_h="48", dt_h="0.5")
+        self.assertEqual(payload["run"], {"duration_h": 48.0, "dt_h": 0.5})
+        import_scenario(payload)
+
     def test_export_import_replays_same_step(self):
         original = CellCulture("a549")
         original.oxygen_percent = 12.0
