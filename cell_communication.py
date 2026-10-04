@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from math import ceil, isfinite, sqrt
+from math import ceil, exp, isfinite, sqrt
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -99,15 +99,20 @@ class CellCommunicationState:
         self.resilient_fraction = 100.0 - self.stressed_fraction - self.injured_fraction
 
         # 中性相对信号池：应激/受损子群释放，且具有一阶自然衰减。
+        # 对固定释放项的一阶方程采用精确指数更新，避免允许的长时间步
+        # 在显式 Euler 下越过零后被 _clamp 突然截断。
         release_index = 0.35 * self.stressed_fraction + 0.75 * self.injured_fraction
+        signal_decay = exp(-0.18 * dt_h)
+        signal_equilibrium = 0.24 * release_index / 0.18
         self.stress_signal_index = _clamp(
-            self.stress_signal_index + dt_h * (0.24 * release_index - 0.18 * self.stress_signal_index)
+            self.stress_signal_index * signal_decay
+            + signal_equilibrium * (1.0 - signal_decay)
         )
         # 邻近细胞响应追随信号池，并不等同于真实受体响应或占有率。
-        response_rate = min(1.0, 0.30 * dt_h)
+        response_decay = exp(-0.30 * dt_h)
         self.receiver_response_index = _clamp(
-            self.receiver_response_index
-            + (self.stress_signal_index - self.receiver_response_index) * response_rate
+            self.receiver_response_index * response_decay
+            + self.stress_signal_index * (1.0 - response_decay)
         )
         self.time_h += dt_h
 

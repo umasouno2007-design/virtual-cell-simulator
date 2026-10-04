@@ -1,6 +1,7 @@
 """代表性子群通信层的边界与方向测试。"""
 
 import copy
+from math import exp
 import unittest
 
 from cell_communication import CellCommunicationState, representative_subpopulation_points
@@ -37,6 +38,29 @@ class CellCommunicationTests(unittest.TestCase):
         calm = IntracellularState(atp_percent=100.0, ros_percent=0.0, er_stress_percent=0.0, dna_damage_percent=0.0, apoptosis_signal_percent=0.0)
         state.step(calm, 1.0)
         self.assertLess(state.stress_signal_index, 90.0)
+
+    def test_long_allowed_step_uses_stable_first_order_updates(self) -> None:
+        state = CellCommunicationState(
+            resilient_fraction=100.0, stressed_fraction=0.0, injured_fraction=0.0,
+            stress_signal_index=90.0, receiver_response_index=90.0,
+        )
+        calm = IntracellularState(
+            atp_percent=100.0, ros_percent=0.0, er_stress_percent=0.0,
+            dna_damage_percent=0.0, apoptosis_signal_percent=0.0,
+        )
+
+        state.step(calm, 24.0)
+
+        release = 0.35 * state.stressed_fraction + 0.75 * state.injured_fraction
+        decay = exp(-0.18 * 24.0)
+        expected_signal = 90.0 * decay + (0.24 * release / 0.18) * (1.0 - decay)
+        response_decay = exp(-0.30 * 24.0)
+        expected_response = 90.0 * response_decay + expected_signal * (1.0 - response_decay)
+        self.assertAlmostEqual(state.stress_signal_index, expected_signal)
+        self.assertAlmostEqual(state.receiver_response_index, expected_response)
+        self.assertGreater(state.stress_signal_index, 0.0)
+        self.assertGreater(state.receiver_response_index, 0.0)
+        self.assertEqual(state.time_h, 24.0)
 
     def test_invalid_time_step_does_not_advance_communication_state(self) -> None:
         state = CellCommunicationState()

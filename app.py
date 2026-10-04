@@ -268,7 +268,7 @@ st.markdown(
 
 # 运行时状态格式与科学模型版本分开：前者可因持久化结构变化而调整，后者用于结果可追溯。
 # 保持此值可兼容已有本机运行状态；科学输出统一使用 MODEL_VERSION。
-APP_STATE_VERSION = "1.2.0"
+APP_STATE_VERSION = "1.2.1"
 RUNTIME_STATE_PATH = Path(__file__).with_name(".runtime_state.json")
 MAX_HISTORY_POINTS = 2000
 
