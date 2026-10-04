@@ -94,6 +94,32 @@ class CellCommunicationTests(unittest.TestCase):
         points = representative_subpopulation_points(communication, "信号释放", total_points=36)
         self.assertEqual(len(points), 36)
         self.assertEqual({point["group"] for point in points}, {"稳态/适应", "应激", "受损"})
+        self.assertEqual({point["value"] for point in points}, {0.0, 35.0, 75.0})
+
+    def test_map_release_uses_model_coefficients_and_current_subgroup_composition(self) -> None:
+        baseline = CellCommunicationState()
+        stressed = CellCommunicationState(
+            resilient_fraction=40.0, stressed_fraction=35.0, injured_fraction=25.0,
+        )
+        baseline_points = representative_subpopulation_points(baseline, "信号释放", total_points=100)
+        stressed_points = representative_subpopulation_points(stressed, "信号释放", total_points=100)
+        baseline_groups = {name: sum(point["group"] == name for point in baseline_points) for name in {p["group"] for p in baseline_points}}
+        stressed_groups = {name: sum(point["group"] == name for point in stressed_points) for name in {p["group"] for p in stressed_points}}
+        self.assertNotEqual(baseline_groups, stressed_groups)
+        self.assertEqual(
+            {point["value"] for point in stressed_points},
+            {0.0, 35.0, 75.0},
+        )
+
+    def test_fate_map_reads_the_existing_representative_apoptosis_index(self) -> None:
+        communication = CellCommunicationState()
+        intracellular = IntracellularState(apoptosis_signal_percent=37.5)
+        with self.assertRaisesRegex(ValueError, "必须提供当前代表性细胞状态"):
+            representative_subpopulation_points(communication, "命运倾向")
+        points = representative_subpopulation_points(
+            communication, "命运倾向", intracellular=intracellular,
+        )
+        self.assertEqual({point["value"] for point in points}, {37.5})
 
     def test_larger_teaching_map_keeps_all_points_inside_plot_bounds(self) -> None:
         points = representative_subpopulation_points(CellCommunicationState(), total_points=100)

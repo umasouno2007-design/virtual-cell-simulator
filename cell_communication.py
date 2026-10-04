@@ -129,7 +129,11 @@ class CellCommunicationState:
 
 
 def representative_subpopulation_points(
-    state: CellCommunicationState, view: str = "子群状态", total_points: int = 36
+    state: CellCommunicationState,
+    view: str = "子群状态",
+    total_points: int = 36,
+    *,
+    intracellular: "IntracellularState | None" = None,
 ) -> list[dict[str, float | str]]:
     """生成固定数量的示意点。
 
@@ -137,6 +141,11 @@ def representative_subpopulation_points(
     信号释放、接收端响应或命运倾向。
     """
 
+    valid_views = {"子群状态", "信号释放", "接收端响应", "命运倾向"}
+    if view not in valid_views:
+        raise ValueError(f"不支持的子群地图视图：{view}。")
+    if view == "命运倾向" and intracellular is None:
+        raise ValueError("命运倾向视图必须提供当前代表性细胞状态。")
     total_points = max(9, min(int(total_points), 100))
     injured_count = min(total_points, round(total_points * state.injured_fraction / 100.0))
     stressed_count = min(total_points - injured_count, round(total_points * state.stressed_fraction / 100.0))
@@ -144,19 +153,22 @@ def representative_subpopulation_points(
     groups = (["稳态/适应"] * resilient_count + ["应激"] * stressed_count + ["受损"] * injured_count)
     colors = {"稳态/适应": "#5f8f87", "应激": "#bd8a43", "受损": "#a85a61"}
     markers = {"稳态/适应": "o", "应激": "s", "受损": "X"}
-    release = {"稳态/适应": 8.0, "应激": 55.0, "受损": 88.0}
-    fate = {"稳态/适应": 12.0, "应激": 45.0, "受损": 82.0}
+    # 展示每个代表点对应的归一化释放系数；点数才体现当前子群构成。
+    # 系数 0.35 / 0.75 与下方 stress_signal_index 的释放规则保持一致。
+    release_weight = {"稳态/适应": 0.0, "应激": 35.0, "受损": 75.0}
     points: list[dict[str, float | str]] = []
     columns = 6 if total_points <= 36 else ceil(sqrt(total_points))
     rows = ceil(total_points / columns)
     for index, group in enumerate(groups):
         row, column = divmod(index, columns)
         if view == "信号释放":
-            value = release[group]
+            value = release_weight[group]
         elif view == "接收端响应":
             value = state.receiver_response_index
         elif view == "命运倾向":
-            value = fate[group]
+            # 该指数来自当前单个代表性细胞，统一显示在有限代表点上；不构造
+            # 未经模拟的子群特异命运状态。
+            value = _clamp(float(intracellular.apoptosis_signal_percent))
         else:
             value = {"稳态/适应": 1.0, "应激": 2.0, "受损": 3.0}[group]
         points.append({

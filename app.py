@@ -2946,10 +2946,12 @@ def _plot_communication_chain(communication: CellCommunicationState) -> plt.Figu
     return fig
 
 
-def _plot_subpopulation_map(communication: CellCommunicationState, view: str) -> plt.Figure:
+def _plot_subpopulation_map(
+    communication: CellCommunicationState, view: str, state: IntracellularState
+) -> plt.Figure:
     """绘制有限代表点地图；坐标只用于排版。"""
 
-    points = representative_subpopulation_points(communication, view)
+    points = representative_subpopulation_points(communication, view, intracellular=state)
     fig, ax = plt.subplots(figsize=(6.4, 3.7))
     labels_seen: set[str] = set()
     for point in points:
@@ -3004,9 +3006,17 @@ def cell_communication_panel(cell, state: IntracellularState) -> None:
     map_col, note_col = st.columns([1.35, 1.0], gap="medium")
     with map_col:
         view = st.radio("查看方式", ["子群状态", "信号释放", "接收端响应", "命运倾向"], horizontal=True, key="communication_map_view")
-        figure = _plot_subpopulation_map(communication, view)
+        figure = _plot_subpopulation_map(communication, view, state)
         st.pyplot(figure, width="stretch")
         plt.close(figure)
+        if view == "信号释放":
+            st.caption("点的数量反映当前代表性子群比例；点大小/透明度表示模型中每类对应的归一化释放权重（0、0.35、0.75），不是实际分泌量。信号池相对指数见机制链。")
+        elif view == "命运倾向":
+            st.caption(f"点的数量与符号反映代表性子群比例；点大小/透明度统一读取当前代表性细胞的促凋亡压力相对指数（{state.apoptosis_signal_percent:.1f}），不代表各子群各自的命运率。")
+        elif view == "接收端响应":
+            st.caption(f"点的数量与符号反映代表性子群比例；颜色深浅统一读取当前接收端响应相对指数（{communication.receiver_response_index:.1f}），不是单细胞受体响应测量。")
+        else:
+            st.caption("点数近似显示当前代表性子群比例；二维位置仅用于排版。")
     with note_col:
         st.markdown("**图例与范围**")
         st.markdown("- ○ 稳态/适应；□ 应激；✕ 受损。颜色、形状与文字共同区分子群。\n- 点数量固定且有限，只用于展示当前代表性比例。\n- 点的二维位置是排版，不是空间坐标、显微图像或单细胞组学结果。\n- ‘信号释放’、‘接收端响应’与‘命运倾向’均为无单位相对指数。")
