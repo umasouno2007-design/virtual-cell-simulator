@@ -416,12 +416,18 @@ class CellCultureTestCase(unittest.TestCase):
         cell.dead_cells = 1.7e308
         self.assertAlmostEqual(cell.viability_percent, 50.0)
 
-        cell = CellCulture("hela", surface_area_cm2=1e305, viable_cells=1.7e308)
-        cell.parameters.growth_scale = 20.0
+        cell = CellCulture("a549", surface_area_cm2=2e303, viable_cells=1e308)
+        cell.parameters.growth_scale = 1000.0
         with self.assertRaisesRegex(ValueError, "细胞数量超出当前软件的数值安全范围"):
             cell.step(1.0)
         self.assertTrue(math.isfinite(cell.viable_cells))
         self.assertEqual(cell.time_h, 0.0)
+
+    def test_constructor_rejects_dimensions_that_overflow_capacity_or_volume_scaling(self) -> None:
+        with self.assertRaisesRegex(ValueError, "承载容量超出.*数值安全范围"):
+            CellCulture("hela", surface_area_cm2=1e305)
+        with self.assertRaisesRegex(ValueError, "培养体积超出.*数值安全范围"):
+            CellCulture("hela", culture_volume_ml=1e305)
 
     def test_negative_rate_or_uptake_cannot_create_negative_outputs(self) -> None:
         for name in ("death_rate_per_h", "uptake_scale", "oxygen_transfer_per_h"):

@@ -74,9 +74,15 @@ class CellCulture:
         self.profile_key = self.profile.key
         self.culture_volume_ml = max(0.1, _finite_nonnegative(culture_volume_ml, 0.1))
         self.surface_area_cm2 = max(0.1, _finite_nonnegative(surface_area_cm2, 0.1))
+        if not isfinite(self.culture_volume_ml * 2.5e5):
+            raise ValueError("培养体积超出当前模型的数值安全范围。")
+        if not isfinite(self.surface_area_cm2 * self.profile.max_density_cell_cm2):
+            raise ValueError("培养面积使承载容量超出当前模型的数值安全范围。")
         default_viable = (
             self.profile.seeding_density_cell_cm2 * self.surface_area_cm2
         )
+        if not isfinite(default_viable):
+            raise ValueError("培养面积使默认接种细胞数超出当前模型的数值安全范围。")
         self.viable_cells = default_viable if viable_cells is None else _finite_nonnegative(viable_cells)
         self.dead_cells = 0.0
         self.time_h = 0.0
