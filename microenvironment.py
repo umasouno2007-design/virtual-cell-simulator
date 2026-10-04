@@ -74,6 +74,10 @@ class MicroenvironmentState:
     def from_culture(cls, culture: object) -> "MicroenvironmentState":
         """从现有 ``CellCulture`` 派生同格式输入，保持培养模型不变。"""
 
+        from cell import CellCulture
+
+        if not isinstance(culture, CellCulture):
+            raise ValueError("只能从有效的 CellCulture 对象派生微环境。")
         profile = getattr(culture, "profile")
         parameters = getattr(culture, "parameters")
         source_values = {
@@ -85,6 +89,7 @@ class MicroenvironmentState:
             "温度": getattr(culture, "temperature_c"),
             "药物浓度": getattr(culture, "drug_um"),
             "细胞密度": getattr(culture, "viable_cells"),
+            "汇合度": getattr(culture, "confluence_percent"),
             "参考葡萄糖": profile.initial_glucose_mm,
             "倍增时间": profile.doubling_time_h,
             "药物 IC50": parameters.drug_ic50_um,
@@ -96,18 +101,27 @@ class MicroenvironmentState:
                 + "、".join(invalid_booleans)
                 + "。"
             )
+        numeric_values: dict[str, float] = {}
+        for name, value in source_values.items():
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError, OverflowError):
+                raise ValueError(f"无法从培养状态派生微环境；字段 {name} 不是有限数值。") from None
+            if not isfinite(numeric):
+                raise ValueError(f"无法从培养状态派生微环境；字段 {name} 不是有限数值。")
+            numeric_values[name] = numeric
         return cls(
-            time_h=getattr(culture, "time_h"),
-            local_oxygen_availability=_bounded(getattr(culture, "oxygen_percent") / 18.6, 0.0, 1.0),
-            glucose_mm=getattr(culture, "glucose_mm"),
-            glucose_reference_mm=profile.initial_glucose_mm,
-            lactate_mm=getattr(culture, "lactate_mm"),
-            ph=getattr(culture, "ph"),
-            temperature_c=getattr(culture, "temperature_c"),
-            drug_um=getattr(culture, "drug_um"),
-            local_confluence_percent=getattr(culture, "confluence_percent"),
-            doubling_time_h=profile.doubling_time_h,
-            drug_ic50_um=parameters.drug_ic50_um,
+            time_h=numeric_values["培养时钟"],
+            local_oxygen_availability=_bounded(numeric_values["培养氧设定"] / 18.6, 0.0, 1.0),
+            glucose_mm=numeric_values["葡萄糖"],
+            glucose_reference_mm=numeric_values["参考葡萄糖"],
+            lactate_mm=numeric_values["乳酸"],
+            ph=numeric_values["pH"],
+            temperature_c=numeric_values["温度"],
+            drug_um=numeric_values["药物浓度"],
+            local_confluence_percent=numeric_values["汇合度"],
+            doubling_time_h=numeric_values["倍增时间"],
+            drug_ic50_um=numeric_values["药物 IC50"],
         ).normalized()
 
     def snapshot(self) -> dict[str, float]:

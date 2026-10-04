@@ -190,6 +190,14 @@ class MicroenvironmentAndMicrocolonyTests(unittest.TestCase):
                 self.assertEqual(culture.snapshot(), culture_before)
                 self.assertEqual(state.snapshot(), state_before)
 
+    def test_culture_adapter_rejects_wrong_objects_and_unrepresentable_fields(self) -> None:
+        with self.assertRaisesRegex(ValueError, "有效的 CellCulture"):
+            MicroenvironmentState.from_culture(object())
+        culture = CellCulture("a549")
+        culture.oxygen_percent = 10**10000
+        with self.assertRaisesRegex(ValueError, "培养氧设定.*有限数值"):
+            MicroenvironmentState.from_culture(culture)
+
     def test_legacy_culture_input_matches_explicit_microenvironment_path(self) -> None:
         culture = CellCulture("a549")
         legacy_path = IntracellularState()
