@@ -202,6 +202,15 @@ class ExperimentDataTestCase(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     comparison_frame(simulation, observed)
 
+    def test_comparison_reports_nested_cell_values_as_invalid_numeric_data(self) -> None:
+        simulation = pd.DataFrame({"time_h": [0.0, 24.0], "viable_cells": [100.0, 120.0]})
+        observed = pd.DataFrame({
+            "time_h": [0.0, 24.0],
+            "viable_cells": pd.Series([100.0, [110.0, 120.0]], dtype=object),
+        })
+        with self.assertRaisesRegex(ValueError, "实测字段 活细胞数包含无法解析的非空值"):
+            comparison_frame(simulation, observed)
+
     def test_comparison_rejects_negative_numeric_metrics_on_either_side(self) -> None:
         simulation = pd.DataFrame({"time_h": [0.0, 24.0], "viable_cells": [100.0, 200.0]})
         observed = pd.DataFrame({"time_h": [0.0, 24.0], "viable_cells": [100.0, -200.0]})

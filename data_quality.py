@@ -5,6 +5,7 @@ from math import isfinite
 import pandas as pd
 
 from experiment_data import FIELD_LABELS, MAX_CSV_ROWS, MODEL_STATE_BOUNDS
+from numeric_utils import is_boolean_scalar
 from version import MODEL_VERSION
 
 
@@ -15,14 +16,23 @@ def numeric_series(values: pd.Series) -> pd.Series:
         raise ValueError("数值转换需要单列 Pandas Series。")
     try:
         return pd.to_numeric(values, errors="coerce")
-    except OverflowError:
+    except (OverflowError, TypeError, ValueError):
         def convert(value):
-            if pd.isna(value):
+            try:
+                missing = pd.isna(value)
+            except (TypeError, ValueError):
+                missing = False
+            if isinstance(missing, bool) and missing:
+                return float("nan")
+            if is_boolean_scalar(missing) and bool(missing):
                 return float("nan")
             try:
                 return float(value)
             except OverflowError:
-                return float("-inf") if value < 0 else float("inf")
+                try:
+                    return float("-inf") if value < 0 else float("inf")
+                except (TypeError, ValueError):
+                    return float("nan")
             except (TypeError, ValueError):
                 return float("nan")
 
@@ -60,9 +70,7 @@ def quality_report(data: pd.DataFrame) -> dict:
     if "time_h" not in data or data.empty:
         blocked.append(("缺少可用时间列", "提供至少两个数值 time_h 时间点。"))
     else:
-        time_is_boolean = data["time_h"].map(
-            lambda value: pd.api.types.is_bool_dtype(type(value)) if pd.notna(value) else False
-        )
+        time_is_boolean = data["time_h"].map(is_boolean_scalar)
         if time_is_boolean.any():
             blocked.append(("时间列包含布尔值", "时间必须是以小时表示的数值；True/False 不能作为 0/1 小时使用。"))
         invalid_source_times = source_count("invalid_time_count")
@@ -112,9 +120,7 @@ def quality_report(data: pd.DataFrame) -> dict:
         if field not in data:
             continue
         raw_values = data[field]
-        boolean_values = raw_values.map(
-            lambda value: pd.api.types.is_bool_dtype(type(value)) if pd.notna(value) else False
-        )
+        boolean_values = raw_values.map(is_boolean_scalar)
         if boolean_values.any():
             boolean_fields.add(field)
             blocked.append((

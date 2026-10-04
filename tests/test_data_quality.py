@@ -91,6 +91,15 @@ class DataQualityTests(unittest.TestCase):
         self.assertTrue(any("无法解析为数值" in issue for issue, _ in result["blocked"]))
         self.assertTrue(any("缺少可校准指标" in issue for issue, _ in result["blocked"]))
 
+    def test_nested_values_are_reported_as_invalid_data_not_pandas_truth_errors(self):
+        data = pd.DataFrame({
+            "time_h": [0.0, 24.0, 48.0],
+            "glucose_mM": pd.Series([5.0, [4.0, 3.0], 2.0], dtype=object),
+        })
+        report = quality_report(data)
+        self.assertFalse(report["is_minimum_model_ready"])
+        self.assertTrue(any("无法解析为数值" in issue for issue, _ in report["blocked"]))
+
     def test_invalid_oxygen_or_ph_scale_is_blocked(self):
         high_oxygen = quality_report(pd.DataFrame({
             "time_h": [0, 24, 48], "oxygen_percent": [21, 25, 101], "viable_cells": [1, 2, 3],

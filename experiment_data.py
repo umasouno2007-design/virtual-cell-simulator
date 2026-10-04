@@ -13,6 +13,7 @@ import warnings
 from typing import Iterable
 
 import pandas as pd
+from numeric_utils import is_boolean_scalar
 
 
 FIELD_LABELS = {
@@ -204,9 +205,7 @@ def comparison_frame(simulation: pd.DataFrame, measurements: pd.DataFrame) -> pd
         for field in FIELD_LABELS:
             if field not in frame:
                 continue
-            contains_boolean = frame[field].map(
-                lambda value: pd.api.types.is_bool_dtype(type(value)) if pd.notna(value) else False
-            ).any()
+            contains_boolean = frame[field].map(is_boolean_scalar).any()
             if contains_boolean:
                 raise ValueError(f"{label}字段 {FIELD_LABELS[field]}包含布尔值；请使用正确单位的数值数据。")
     normalized_frames: dict[str, pd.DataFrame] = {}
