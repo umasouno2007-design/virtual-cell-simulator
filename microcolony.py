@@ -59,6 +59,8 @@ class MicrocolonyState:
             isinstance(cell, RepresentativeCell) for cell in self.cells
         ):
             raise ValueError("微群体细胞列表必须包含与 cell_count 一致的代表性细胞对象。")
+        if any(not isinstance(cell.state, IntracellularState) for cell in self.cells):
+            raise ValueError("每个代表性细胞都必须包含有效的 IntracellularState 对象。")
         if not self.history:
             self._record_snapshot()
         if not self.finite():
@@ -114,6 +116,8 @@ class MicrocolonyState:
     def step(self, environment: MicroenvironmentState, dt_h: float = 1.0) -> None:
         """原子地推进所有代表性细胞；失败时不保留部分细胞状态或历史。"""
 
+        if not self.finite():
+            raise ValueError("微型细胞群包含越界或非有限状态；请重置或重新载入有效场景。")
         before_time = self.time_h
         before_history = list(self.history)
         before_cells = [
@@ -320,6 +324,8 @@ class MicrocolonyState:
         seen_ids: set[int] = set()
         try:
             for cell in self.cells:
+                if not isinstance(cell, RepresentativeCell) or not isinstance(cell.state, IntracellularState):
+                    return False
                 if type(cell.cell_id) is not int or not 1 <= cell.cell_id <= 50 or cell.cell_id in seen_ids:
                     return False
                 seen_ids.add(cell.cell_id)

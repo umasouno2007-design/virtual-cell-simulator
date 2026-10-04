@@ -7,7 +7,7 @@ import pandas as pd
 
 from cell import CellCulture
 from intracellular import MAX_INTERNAL_STEP_H, IntracellularState
-from microcolony import MicrocolonyState
+from microcolony import MicrocolonyState, RepresentativeCell
 from microenvironment import MicroenvironmentState
 
 
@@ -18,6 +18,7 @@ class MicroenvironmentAndMicrocolonyTests(unittest.TestCase):
             ({"cells": ()}, "cells 和 history 必须是列表"),
             ({"history": ()}, "cells 和 history 必须是列表"),
             ({"cells": [object()]}, "必须包含与 cell_count 一致的代表性细胞对象"),
+            ({"cells": [RepresentativeCell(i + 1, 0.0, 0.0, None) for i in range(3)]}, "必须包含有效的 IntracellularState"),
         ):
             with self.subTest(kwargs=kwargs):
                 with self.assertRaisesRegex(ValueError, message):
@@ -150,6 +151,13 @@ class MicroenvironmentAndMicrocolonyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "有效的 MicroenvironmentState"):
             colony.step(object(), 0.0)
         self.assertEqual(colony.history, before)
+
+    def test_corrupt_cell_object_is_reported_without_snapshot_attribute_error(self) -> None:
+        colony = MicrocolonyState(cell_count=3)
+        colony.cells[0].state = None
+        self.assertFalse(colony.finite())
+        with self.assertRaisesRegex(ValueError, "微型细胞群包含越界或非有限状态"):
+            colony.step(MicroenvironmentState(), 1.0)
 
     def test_colony_clock_precision_loss_is_rejected_before_any_cell_changes(self) -> None:
         colony = MicrocolonyState(cell_count=3)
