@@ -229,6 +229,18 @@ class ExperimentDataTestCase(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message.replace("实测字段", "模拟字段")):
                     comparison_frame(invalid_simulation, valid)
 
+    def test_direct_alignment_and_summary_enforce_resource_limits(self) -> None:
+        from experiment_data import MAX_CSV_ROWS, MAX_SIMULATION_ALIGNMENT_ROWS
+
+        observed = pd.DataFrame({"time_h": [0.0] * (MAX_CSV_ROWS + 1)})
+        with self.assertRaisesRegex(ValueError, "最多接受 5,000 行观测"):
+            comparison_frame(pd.DataFrame({"time_h": [0.0]}), observed)
+        simulation = pd.DataFrame({"time_h": [0.0] * (MAX_SIMULATION_ALIGNMENT_ROWS + 1)})
+        with self.assertRaisesRegex(ValueError, "最多接受 25,000 行模拟历史"):
+            comparison_frame(simulation, pd.DataFrame({"time_h": [0.0]}))
+        with self.assertRaisesRegex(ValueError, "最多接受 5,000 行观测"):
+            residual_summary(pd.DataFrame({"viable_cells_residual": [0.0] * (MAX_CSV_ROWS + 1)}))
+
     def test_comparison_turns_unrepresentably_large_python_integers_into_domain_errors(self) -> None:
         huge = 10**10000
         simulation = pd.DataFrame({

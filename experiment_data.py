@@ -47,6 +47,8 @@ _ALIASES = {
 # 交互式原型的解析资源边界，不是实验时间点或数据质量的科学标准。
 MAX_CSV_BYTES = 5 * 1024 * 1024
 MAX_CSV_ROWS = 5_000
+# Bounds direct DataFrame callers as well as normal file-upload callers.
+MAX_SIMULATION_ALIGNMENT_ROWS = 25_000
 
 
 def _finite_or_missing(value: object) -> bool:
@@ -189,6 +191,13 @@ def comparison_frame(simulation: pd.DataFrame, measurements: pd.DataFrame) -> pd
 
     if not isinstance(simulation, pd.DataFrame) or not isinstance(measurements, pd.DataFrame):
         raise ValueError("模拟—实测对齐需要两个 Pandas 表格。")
+    if len(measurements) > MAX_CSV_ROWS:
+        raise ValueError(f"模拟—实测对齐最多接受 {MAX_CSV_ROWS:,} 行观测；请分批分析。")
+    if len(simulation) > MAX_SIMULATION_ALIGNMENT_ROWS:
+        raise ValueError(
+            f"模拟—实测对齐最多接受 {MAX_SIMULATION_ALIGNMENT_ROWS:,} 行模拟历史；"
+            "请使用当前实验的保留历史窗口。"
+        )
     if "time_h" not in simulation or "time_h" not in measurements:
         raise ValueError("模拟和实测数据都必须包含 time_h。")
     for label, frame in (("模拟", simulation), ("实测", measurements)):
@@ -257,6 +266,8 @@ def residual_summary(comparison: pd.DataFrame) -> pd.DataFrame:
 
     if not isinstance(comparison, pd.DataFrame):
         raise ValueError("残差汇总需要模拟—实测对齐结果表格。")
+    if len(comparison) > MAX_CSV_ROWS:
+        raise ValueError(f"残差汇总最多接受 {MAX_CSV_ROWS:,} 行观测；请分批分析。")
     rows = []
     for field, label in FIELD_LABELS.items():
         residual_column = f"{field}_residual"
