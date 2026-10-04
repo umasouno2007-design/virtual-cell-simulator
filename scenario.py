@@ -64,7 +64,46 @@ def export_scenario(
         or not re.fullmatch(r"[0-9a-f]{64}", data_file_fingerprint)
     ):
         raise ValueError("数据文件指纹必须是 64 位小写 SHA-256 十六进制字符串。")
-    return {"schema": SCENARIO_SCHEMA_VERSION, "model_version": MODEL_VERSION, "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "cell": {"profile_key": cell.profile_key, "initial_viable_cells": cell.viable_cells, "culture_volume_ml": cell.culture_volume_ml, "surface_area_cm2": cell.surface_area_cm2}, "resume_state": {"time_h": cell.time_h, "dead_cells": cell.dead_cells, "energy_index": cell.energy_index, "last_growth_rate_per_h": cell.last_growth_rate_per_h, "last_death_rate_per_h": cell.last_death_rate_per_h}, "environment": {"glucose_mM": cell.glucose_mm, "glutamine_mM": cell.glutamine_mm, "lactate_mM": cell.lactate_mm, "oxygen_percent": cell.oxygen_percent, "oxygen_setpoint_percent": cell.oxygen_setpoint_percent, "pH": cell.ph, "temperature_C": cell.temperature_c, "CO2_percent": cell.co2_percent, "osmolality_mOsm_kg": cell.osmolality_mosm_kg, "drug_uM": cell.drug_um}, "parameters": asdict(cell.parameters), "run": {"duration_h": duration, "dt_h": step}, "events": deepcopy(events or []), "evidence_level": "A/B/C：参数关系证据等级见 MODEL_CARD.md；数值可能待校准。", "calibration_status": calibration_status, "data_file_fingerprint": data_file_fingerprint, "limitations": "场景只保存续跑起点与配置，不含此前完整历史；不是 GLP/GMP 审计追踪、实验原始记录或临床文档。"}
+    payload = {
+        "schema": SCENARIO_SCHEMA_VERSION,
+        "model_version": MODEL_VERSION,
+        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "cell": {
+            "profile_key": cell.profile_key,
+            "initial_viable_cells": cell.viable_cells,
+            "culture_volume_ml": cell.culture_volume_ml,
+            "surface_area_cm2": cell.surface_area_cm2,
+        },
+        "resume_state": {
+            "time_h": cell.time_h,
+            "dead_cells": cell.dead_cells,
+            "energy_index": cell.energy_index,
+            "last_growth_rate_per_h": cell.last_growth_rate_per_h,
+            "last_death_rate_per_h": cell.last_death_rate_per_h,
+        },
+        "environment": {
+            "glucose_mM": cell.glucose_mm,
+            "glutamine_mM": cell.glutamine_mm,
+            "lactate_mM": cell.lactate_mm,
+            "oxygen_percent": cell.oxygen_percent,
+            "oxygen_setpoint_percent": cell.oxygen_setpoint_percent,
+            "pH": cell.ph,
+            "temperature_C": cell.temperature_c,
+            "CO2_percent": cell.co2_percent,
+            "osmolality_mOsm_kg": cell.osmolality_mosm_kg,
+            "drug_uM": cell.drug_um,
+        },
+        "parameters": asdict(cell.parameters),
+        "run": {"duration_h": duration, "dt_h": step},
+        "events": deepcopy(events if events is not None else []),
+        "evidence_level": "A/B/C：参数关系证据等级见 MODEL_CARD.md；数值可能待校准。",
+        "calibration_status": calibration_status,
+        "data_file_fingerprint": data_file_fingerprint,
+        "limitations": "场景只保存续跑起点与配置，不含此前完整历史；不是 GLP/GMP 审计追踪、实验原始记录或临床文档。",
+    }
+    # Keep the export contract symmetric: any emitted file can be immediately re-imported.
+    import_scenario(payload)
+    return payload
 
 def import_scenario(payload: bytes | str | dict) -> tuple[CellCulture, dict]:
     """校验并恢复场景，单位见 SCENARIO_FORMAT.md；非法输入抛出可读 ValueError。"""

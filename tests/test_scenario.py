@@ -37,6 +37,15 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(payload["run"], {"duration_h": 48.0, "dt_h": 0.5})
         import_scenario(payload)
 
+    def test_export_never_silently_discards_malformed_events_or_invalid_state(self):
+        with self.assertRaisesRegex(ValueError, "events 必须是计划操作列表"):
+            export_scenario(CellCulture("a549"), events=())
+
+        cell = CellCulture("a549")
+        cell.oxygen_percent = 30.0
+        with self.assertRaisesRegex(ValueError, "环境字段 oxygen_percent 超出"):
+            export_scenario(cell)
+
     def test_export_import_replays_same_step(self):
         original = CellCulture("a549")
         original.oxygen_percent = 12.0
@@ -147,10 +156,11 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(imported["events"], [event])
 
     def test_pending_event_cannot_claim_an_execution_timestamp(self):
-        payload = export_scenario(CellCulture("a549"), events=[{
+        payload = export_scenario(CellCulture("a549"))
+        payload["events"] = [{
             "at_time_h": 12.0, "action": "补充葡萄糖", "value": 1.0,
             "status": "pending", "executed_at_h": 12.0,
-        }])
+        }]
         with self.assertRaisesRegex(ValueError, "待执行操作却含实际处理时间"):
             import_scenario(payload)
         skipped = export_scenario(CellCulture("a549"), events=[{
@@ -169,8 +179,11 @@ class ScenarioTests(unittest.TestCase):
         cell = CellCulture("a549")
         cell.step(6.0)
         payload = export_scenario(cell, events=[{
-            "at_time_h": 2.0, "action": "补充葡萄糖", "value": 1.0, "status": "pending",
+            "at_time_h": 5.0, "action": "补充葡萄糖", "value": 1.0,
+            "status": "executed", "executed_at_h": 5.0,
         }])
+        payload["events"][0]["status"] = "pending"
+        payload["events"][0].pop("executed_at_h")
         with self.assertRaisesRegex(ValueError, "早于续跑起点"):
             import_scenario(payload)
         payload["events"][0]["status"] = "executed"
