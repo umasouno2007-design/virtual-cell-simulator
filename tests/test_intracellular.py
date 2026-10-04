@@ -2,7 +2,7 @@
 
 import unittest
 from itertools import product
-from math import isfinite
+from math import isfinite, isnan
 
 from cell import CellCulture
 from intracellular import IntracellularState, intracellular_status
@@ -96,6 +96,17 @@ class IntracellularStateTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "模拟时钟无法安全推进"):
             state.step(MicroenvironmentState(), 0.25)
         self.assertEqual(state.snapshot(), before)
+
+    def test_corrupt_single_cell_state_is_rejected_before_any_field_changes(self) -> None:
+        state = IntracellularState(ros_percent=float("nan"))
+        before = state.snapshot()
+        with self.assertRaisesRegex(ValueError, "单细胞状态包含越界或非有限值"):
+            state.step(MicroenvironmentState(), 0.25)
+        for name, value in before.items():
+            if name == "ROS_percent":
+                self.assertTrue(isnan(state.snapshot()[name]))
+            else:
+                self.assertEqual(state.snapshot()[name], value)
 
     def test_six_hour_advance_matches_six_one_hour_advances(self) -> None:
         environment = MicroenvironmentState(

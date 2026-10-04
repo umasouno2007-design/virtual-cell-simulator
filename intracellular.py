@@ -59,6 +59,27 @@ class IntracellularState:
     cycle_progress_percent: float = 8.0
     cycle_phase: str = "G1"
 
+    def finite(self) -> bool:
+        """Return whether current relative indices are finite and in model bounds."""
+
+        percent_fields = (
+            "atp_percent", "mitochondrial_potential_percent", "glycolysis_percent",
+            "ros_percent", "dna_damage_percent", "er_stress_percent", "autophagy_percent",
+            "protein_synthesis_percent", "growth_signal_percent", "apoptosis_signal_percent",
+            "cycle_progress_percent",
+        )
+        values = [self.time_h, self.cytosolic_calcium_nm]
+        values.extend(getattr(self, name) for name in percent_fields)
+        if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in values):
+            return False
+        if not all(isfinite(float(value)) for value in values):
+            return False
+        if self.time_h < 0.0 or not 50.0 <= self.cytosolic_calcium_nm <= 1200.0:
+            return False
+        if any(not 0.0 <= float(getattr(self, name)) <= 100.0 for name in percent_fields):
+            return False
+        return self.cycle_phase in {"G1", "S", "G2", "M"}
+
     def step(self, environment: MicroenvironmentState | "CellCulture", dt_h: float = 1.0) -> None:
         """根据培养环境推进细胞器与命运的相对指数。
 
@@ -83,6 +104,8 @@ class IntracellularState:
             raise ValueError("单细胞单步时长不能超过 6 h；请分步推进。")
         if dt_h == 0.0:
             return
+        if not self.finite():
+            raise ValueError("单细胞状态包含越界或非有限值；请重置或载入有效状态。")
         next_time_h = checked_time_advance(self.time_h, dt_h)
         if dt_h > MAX_INTERNAL_STEP_H:
             remaining_h = dt_h
