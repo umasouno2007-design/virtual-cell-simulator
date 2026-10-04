@@ -1,7 +1,7 @@
 """两参数粗校准的回归测试。"""
 
 import unittest
-from math import isclose
+from math import isclose, isfinite
 
 import pandas as pd
 
@@ -111,6 +111,14 @@ class CalibrationTestCase(unittest.TestCase):
             ),
             1e308,
         )
+        largest = float.fromhex("0x1.fffffffffffffp+1023")
+        maximum_frame = pd.DataFrame({
+            "viable_cells_observed": [0.0, 0.0],
+            "viable_cells_residual": [largest, largest],
+        })
+        maximum_score = _score(maximum_frame)
+        self.assertTrue(maximum_score <= largest)
+        self.assertTrue(isfinite(maximum_score))
 
     def test_fit_uses_measurements_and_returns_bounded_parameters(self) -> None:
         cell = CellCulture("hela")

@@ -211,10 +211,16 @@ def _score(comparison: pd.DataFrame, weights: dict[str, float] | None = None) ->
         for weight, _, residuals in weighted_residuals
     ]
     total_scaled_weight = fsum(weight * len(residuals) for weight, residuals in scaled_terms)
-    return hypot(*(
+    score = hypot(*(
         sqrt(weight * len(residuals) / total_scaled_weight) * _stable_rms(residuals)
         for weight, residuals in scaled_terms
     ))
+    maximum_residual = max(
+        abs(value) for _, _, residuals in weighted_residuals for value in residuals
+    )
+    # A weighted RMS cannot exceed the largest participating absolute value;
+    # clamp only possible final-rounding overshoot at float64's upper edge.
+    return min(score, maximum_residual)
 
 
 def fit_growth_and_uptake(
