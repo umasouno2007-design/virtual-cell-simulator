@@ -84,7 +84,8 @@ class IntracellularState:
         if any(not 0.0 <= float(getattr(self, name)) <= 100.0 for name in percent_fields):
             return False
         return (
-            self.cycle_phase in {"G1", "S", "G2", "M"}
+            isinstance(self.cycle_phase, str)
+            and self.cycle_phase in {"G1", "S", "G2", "M"}
             and self.cycle_phase == self._phase_from_progress(self.cycle_progress_percent)
         )
 
