@@ -30,6 +30,12 @@ def forecast_intracellular_state(
         raise ValueError("条件推演需要有效的培养状态对象。")
     if not isinstance(state, IntracellularState):
         raise ValueError("条件推演需要有效的代表性细胞状态。")
+    # Validate model parameters even for a zero-hour request: otherwise the no-op
+    # branch below could bypass the checks normally performed by a model step.
+    try:
+        cell._validate_finite_parameters()
+    except (AttributeError, TypeError, ValueError):
+        raise ValueError("培养模型参数无效；请检查参数后再推演。") from None
     if not isinstance(attribute, str) or attribute not in FORECAST_INPUTS:
         raise KeyError(f"未知条件：{attribute}")
     if is_boolean_scalar(cell.time_h) or is_boolean_scalar(state.time_h):
@@ -43,6 +49,10 @@ def forecast_intracellular_state(
         raise ValueError("培养时钟与代表性细胞状态时钟必须是有限非负小时数。")
     if abs(cell_time_h - state_time_h) > 1e-6:
         raise ValueError("培养时钟与代表性细胞状态时钟不一致；请先重置或同步当前场景。")
+    # Also validate the source state for zero-hour requests, which otherwise
+    # would bypass the checks normally performed by an intracellular step.
+    if not state.finite():
+        raise ValueError("代表性细胞状态包含越界或非有限值；请重置或修复状态后再推演。")
     if is_boolean_scalar(value) or is_boolean_scalar(horizon_h):
         raise ValueError("候选条件和推演时长必须是有限数值。")
     try:

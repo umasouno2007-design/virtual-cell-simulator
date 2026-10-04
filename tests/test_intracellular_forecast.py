@@ -45,6 +45,21 @@ class IntracellularForecastTestCase(unittest.TestCase):
         )
         self.assertEqual(result["completed_h"], 0.0)
 
+    def test_zero_hour_forecast_still_validates_source_state_and_parameters(self) -> None:
+        cell, state = CellCulture(), IntracellularState()
+        state.ros_percent = float("nan")
+        with self.assertRaisesRegex(ValueError, "代表性细胞状态"):
+            forecast_intracellular_state(
+                cell, state, attribute="glucose_mm", value=5.0, horizon_h=0.0,
+            )
+
+        state = IntracellularState()
+        cell.parameters.growth_scale = float("inf")
+        with self.assertRaisesRegex(ValueError, "模型参数无效"):
+            forecast_intracellular_state(
+                cell, state, attribute="glucose_mm", value=5.0, horizon_h=0.0,
+            )
+
     def test_forecast_rejects_invalid_objects_misaligned_clocks_and_unknown_keys(self) -> None:
         cell = CellCulture("hela")
         cell.step(1.0)
