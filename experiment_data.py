@@ -215,6 +215,8 @@ def comparison_frame(simulation: pd.DataFrame, measurements: pd.DataFrame) -> pd
                 raise ValueError(f"{label}字段 {FIELD_LABELS[field]}包含无法解析的非空值。")
             if not numeric_values.map(_finite_or_missing).all():
                 raise ValueError(f"{label}字段 {FIELD_LABELS[field]}包含非有限数值。")
+            if (numeric_values.dropna() < 0).any():
+                raise ValueError(f"{label}字段 {FIELD_LABELS[field]}包含负值，不能用于模拟对齐。")
             normalized[field] = numeric_values
         normalized_frames[label] = normalized
     simulation = normalized_frames["模拟"]

@@ -202,6 +202,17 @@ class ExperimentDataTestCase(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     comparison_frame(simulation, observed)
 
+    def test_comparison_rejects_negative_numeric_metrics_on_either_side(self) -> None:
+        simulation = pd.DataFrame({"time_h": [0.0, 24.0], "viable_cells": [100.0, 200.0]})
+        observed = pd.DataFrame({"time_h": [0.0, 24.0], "viable_cells": [100.0, -200.0]})
+        with self.assertRaisesRegex(ValueError, "实测字段 活细胞数包含负值"):
+            comparison_frame(simulation, observed)
+
+        invalid_simulation = simulation.assign(viable_cells=[100.0, -200.0])
+        valid_observed = pd.DataFrame({"time_h": [0.0, 24.0], "viable_cells": [100.0, 200.0]})
+        with self.assertRaisesRegex(ValueError, "模拟字段 活细胞数包含负值"):
+            comparison_frame(invalid_simulation, valid_observed)
+
     def test_comparison_turns_unrepresentably_large_python_integers_into_domain_errors(self) -> None:
         huge = 10**10000
         simulation = pd.DataFrame({
