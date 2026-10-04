@@ -132,6 +132,12 @@ def fit_growth_and_uptake(
     ]
     if not eligible:
         raise ValueError("请至少提供活细胞数、葡萄糖或乳酸中的一个指标，且不少于两个时间点。")
+    if weights is not None and not isinstance(weights, dict):
+        raise ValueError("校准指标权重必须是以指标名称为键的映射。")
+    unknown_weights = set(weights or {}) - set(FIT_FIELDS)
+    if unknown_weights:
+        unknown = "、".join(sorted(str(name) for name in unknown_weights))
+        raise ValueError(f"校准权重包含不支持的指标：{unknown}。可用指标：{'、'.join(FIT_FIELDS)}。")
     try:
         if any(is_boolean_scalar(value) for value in (weights or {}).values()):
             raise TypeError("布尔权重不是数值输入。")

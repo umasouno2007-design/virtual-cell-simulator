@@ -331,6 +331,17 @@ class CalibrationTestCase(unittest.TestCase):
                         {"viable_cells": invalid_weight},
                     )
 
+    def test_invalid_weight_container_or_unknown_metric_is_rejected(self) -> None:
+        cell = CellCulture("hela")
+        measurements = pd.DataFrame({"time_h": [0.0, 24.0], "viable_cells": [100.0, 120.0]})
+        for invalid_weights in ([], "viable_cells", {"cell_count": 2.0}):
+            with self.subTest(weights=invalid_weights):
+                with self.assertRaisesRegex(ValueError, "权重"):
+                    fit_growth_and_uptake(
+                        cell, [cell.snapshot()], measurements,
+                        invalid_weights,
+                    )
+
 
 if __name__ == "__main__":
     unittest.main()
