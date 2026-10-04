@@ -96,7 +96,27 @@ class MicrocolonyState:
         )
 
     def step(self, environment: MicroenvironmentState, dt_h: float = 1.0) -> None:
-        """推进所有细胞；关闭通信时不应用邻居信号反馈。"""
+        """原子地推进所有代表性细胞；失败时不保留部分细胞状态或历史。"""
+
+        before_time = self.time_h
+        before_history = list(self.history)
+        before_cells = [
+            (cell, cell.state.__dict__.copy(), cell.local_signal_index)
+            for cell in self.cells
+        ]
+        try:
+            self._step_in_place(environment, dt_h)
+        except Exception:
+            self.time_h = before_time
+            self.history = before_history
+            for cell, state, local_signal in before_cells:
+                cell.state.__dict__.clear()
+                cell.state.__dict__.update(state)
+                cell.local_signal_index = local_signal
+            raise
+
+    def _step_in_place(self, environment: MicroenvironmentState, dt_h: float) -> None:
+        """执行单次或子步更新；原子性由公开 ``step`` 提供。"""
 
         if not self.finite():
             raise ValueError("微型细胞群包含越界或非有限状态；请重置或重新载入有效场景。")
@@ -117,7 +137,7 @@ class MicrocolonyState:
             remaining_h = dt_h
             while remaining_h > 1e-12:
                 substep_h = min(MAX_INTERNAL_STEP_H, remaining_h)
-                self.step(environment, substep_h)
+                self._step_in_place(environment, substep_h)
                 remaining_h -= substep_h
             return
         environment = environment.normalized_copy()

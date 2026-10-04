@@ -53,6 +53,10 @@ class CalibrationTestCase(unittest.TestCase):
             with self.subTest(target_times=invalid_time):
                 with self.assertRaisesRegex(ValueError, "校准重演时间"):
                     replay_from_initial(cell, initial, invalid_time, 1.0, 1.0)
+        for growth, uptake in ((True, 1.0), (float("nan"), 1.0), (2.1, 1.0), (1.0, 3.1)):
+            with self.subTest(growth_scale=growth, uptake_scale=uptake):
+                with self.assertRaisesRegex(ValueError, "校准重演参数"):
+                    replay_from_initial(cell, initial, [], growth, uptake)
 
         measurements = pd.DataFrame({
             "time_h": [0.0, 24.0], "viable_cells": [100.0, 120.0],

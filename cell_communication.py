@@ -73,6 +73,32 @@ class CellCommunicationState:
         *,
         feedback_enabled: bool = False,
     ) -> None:
+        """原子地推进通信池与接收细胞状态。"""
+
+        before_self = self.__dict__.copy()
+        before_intracellular = (
+            intracellular.__dict__.copy()
+            if isinstance(intracellular, IntracellularState) else None
+        )
+        try:
+            self._step_in_place(
+                intracellular, dt_h, feedback_enabled=feedback_enabled,
+            )
+        except Exception:
+            self.__dict__.clear()
+            self.__dict__.update(before_self)
+            if before_intracellular is not None:
+                intracellular.__dict__.clear()
+                intracellular.__dict__.update(before_intracellular)
+            raise
+
+    def _step_in_place(
+        self,
+        intracellular: "IntracellularState",
+        dt_h: float = 1.0,
+        *,
+        feedback_enabled: bool = False,
+    ) -> None:
         """由既有细胞内状态推进聚合通信层。
 
         输入为现有 ``IntracellularState`` 的相对指数，``dt_h`` 单位为小时。
@@ -101,7 +127,7 @@ class CellCommunicationState:
             remaining_h = dt_h
             while remaining_h > 1e-12:
                 substep_h = min(MAX_INTERNAL_STEP_H, remaining_h)
-                self.step(intracellular, substep_h, feedback_enabled=feedback_enabled)
+                self._step_in_place(intracellular, substep_h, feedback_enabled=feedback_enabled)
                 remaining_h -= substep_h
             return
 

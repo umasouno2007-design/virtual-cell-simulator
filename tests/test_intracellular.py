@@ -10,6 +10,23 @@ from microenvironment import MicroenvironmentState
 
 
 class IntracellularStateTestCase(unittest.TestCase):
+    def test_failed_later_substep_rolls_back_intracellular_state(self) -> None:
+        class FailingEnvironment(MicroenvironmentState):
+            calls = 0
+
+            def normalized_copy(self):
+                self.calls += 1
+                if self.calls == 2:
+                    raise RuntimeError("injected environment failure")
+                return super().normalized_copy()
+
+        state = IntracellularState()
+        environment = FailingEnvironment()
+        before = state.snapshot()
+        with self.assertRaisesRegex(RuntimeError, "injected environment failure"):
+            state.step(environment, 0.5)
+        self.assertEqual(state.snapshot(), before)
+
     def test_unrepresentably_large_duration_is_rejected_as_user_input(self) -> None:
         state = IntracellularState()
         before = state.snapshot()

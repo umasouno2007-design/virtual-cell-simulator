@@ -12,6 +12,26 @@ from microenvironment import MicroenvironmentState
 
 
 class MicroenvironmentAndMicrocolonyTests(unittest.TestCase):
+    def test_microcolony_step_rolls_back_every_cell_and_history_on_partial_failure(self) -> None:
+        colony = MicrocolonyState(cell_count=4, communication_enabled=True)
+        environment = MicroenvironmentState(local_oxygen_availability=0.5, glucose_mm=3.0)
+        before_states = [cell.state.snapshot() for cell in colony.cells]
+        before_signals = [cell.local_signal_index for cell in colony.cells]
+        before_history = [row.copy() for row in colony.history]
+        before_time = colony.time_h
+        second_state = colony.cells[1].state
+
+        def fail_step(*args, **kwargs):
+            raise RuntimeError("injected cell failure")
+
+        second_state.step = fail_step
+        with self.assertRaisesRegex(RuntimeError, "injected cell failure"):
+            colony.step(environment, 0.5)
+        self.assertEqual(colony.time_h, before_time)
+        self.assertEqual([cell.state.snapshot() for cell in colony.cells], before_states)
+        self.assertEqual([cell.local_signal_index for cell in colony.cells], before_signals)
+        self.assertEqual(colony.history, before_history)
+
     def test_unknown_selected_cell_cannot_silently_show_first_cell(self) -> None:
         colony = MicrocolonyState(cell_count=3)
         for invalid in (0, 4, True, "1"):

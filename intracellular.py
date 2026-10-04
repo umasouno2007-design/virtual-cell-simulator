@@ -89,6 +89,19 @@ class IntracellularState:
         )
 
     def step(self, environment: MicroenvironmentState | "CellCulture", dt_h: float = 1.0) -> None:
+        """原子地推进代表性细胞状态；失败时恢复调用前快照。"""
+
+        before = self.__dict__.copy()
+        try:
+            self._step_in_place(environment, dt_h)
+        except Exception:
+            self.__dict__.clear()
+            self.__dict__.update(before)
+            raise
+
+    def _step_in_place(
+        self, environment: MicroenvironmentState | "CellCulture", dt_h: float = 1.0,
+    ) -> None:
         """根据培养环境推进细胞器与命运的相对指数。
 
         ``environment.local_oxygen_availability`` 是“局部氧可用性代理”，并不等同于
@@ -119,7 +132,7 @@ class IntracellularState:
             remaining_h = dt_h
             while remaining_h > 1e-12:
                 substep_h = min(MAX_INTERNAL_STEP_H, remaining_h)
-                self.step(environment, substep_h)
+                self._step_in_place(environment, substep_h)
                 remaining_h -= substep_h
             return
         # 兼容旧调用：现有培养工作流继续传入 CellCulture；新单细胞/微群体只传入环境。

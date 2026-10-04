@@ -15,6 +15,10 @@ from numeric_utils import is_boolean_scalar
 FIT_FIELDS = ("viable_cells", "glucose_mM", "lactate_mM")
 # 与当前培养场景可配置的最长运行时段一致；这不是生物学有效期。
 MAX_CALIBRATION_HORIZON_H = 168.0
+CALIBRATION_SCALE_BOUNDS = {
+    "growth_scale": (0.1, 2.0),
+    "uptake_scale": (0.1, 3.0),
+}
 _CULTURE_INTERVENTIONS = {
     "环境调整", "全量换液", "设置药物", "补充葡萄糖", "补充溶氧", "应用粗校准",
     "计划执行：补充葡萄糖", "计划执行：补充溶氧",
@@ -64,11 +68,25 @@ def replay_from_initial(template: CellCulture, initial: dict, target_times, grow
 
     if not isinstance(template, CellCulture):
         raise ValueError("校准重演模板必须是有效的培养状态对象。")
+    resolved_scales = {}
+    for name, value in (("growth_scale", growth_scale), ("uptake_scale", uptake_scale)):
+        low, high = CALIBRATION_SCALE_BOUNDS[name]
+        if is_boolean_scalar(value):
+            raise ValueError(f"校准重演参数 {name} 必须在 [{low}, {high}] 范围内。")
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(f"校准重演参数 {name} 必须在 [{low}, {high}] 范围内。") from None
+        if not isfinite(numeric) or not low <= numeric <= high:
+            raise ValueError(f"校准重演参数 {name} 必须在 [{low}, {high}] 范围内。")
+        resolved_scales[name] = numeric
     if not isinstance(initial, dict) or initial.get("cell_type") != template.profile_key:
         raise ValueError("校准重演起点的细胞系与当前模板不一致；请核对实验来源。")
     if initial.get("model_version") != MODEL_VERSION:
         raise ValueError("校准重演起点的模型版本不一致；不能混合不同版本结果。")
-    cell = _make_cell(template, initial, growth_scale, uptake_scale)
+    cell = _make_cell(
+        template, initial, resolved_scales["growth_scale"], resolved_scales["uptake_scale"],
+    )
     history = [cell.snapshot()]
     if isinstance(target_times, (str, bytes)):
         raise ValueError("校准重演时间必须是有限小时数。")

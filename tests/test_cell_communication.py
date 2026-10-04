@@ -11,6 +11,25 @@ from simulation import new_simulation
 
 
 class CellCommunicationTests(unittest.TestCase):
+    def test_failed_later_substep_rolls_back_communication_and_receiver(self) -> None:
+        communication = CellCommunicationState()
+        intracellular = IntracellularState()
+        before_communication = communication.snapshot()
+        before_intracellular = intracellular.snapshot()
+        original_finite = intracellular.finite
+        calls = 0
+
+        def fail_on_second_internal_step() -> bool:
+            nonlocal calls
+            calls += 1
+            return calls < 3 and original_finite()
+
+        intracellular.finite = fail_on_second_internal_step
+        with self.assertRaisesRegex(ValueError, "单细胞状态无效"):
+            communication.step(intracellular, 0.5, feedback_enabled=True)
+        self.assertEqual(communication.snapshot(), before_communication)
+        self.assertEqual(intracellular.snapshot(), before_intracellular)
+
     def test_unrepresentably_large_duration_is_rejected_as_user_input(self) -> None:
         state = CellCommunicationState()
         before = state.snapshot()
