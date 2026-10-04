@@ -2,8 +2,9 @@
 
 import math
 import unittest
+from dataclasses import fields
 
-from cell import CellCulture
+from cell import CellCulture, ModelParameters
 from profiles import CELL_PROFILES
 from simulation import new_simulation, run_steps
 
@@ -216,6 +217,37 @@ class CellCultureTestCase(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "growth_scale"):
                     cell.step(1.0)
                 self.assertEqual(cell.time_h, 0.0)
+
+    def test_every_model_parameter_rejects_invalid_types_and_nonfinite_values_atomically(self) -> None:
+        for model_field in fields(ModelParameters):
+            for invalid in (True, float("nan"), float("inf"), "invalid"):
+                with self.subTest(parameter=model_field.name, value=invalid):
+                    cell = CellCulture("a549")
+                    setattr(cell.parameters, model_field.name, invalid)
+                    before = cell.snapshot()
+                    with self.assertRaisesRegex(ValueError, model_field.name):
+                        cell.step(0.25)
+                    self.assertEqual(cell.snapshot(), before)
+
+    def test_each_parameter_sign_constraint_is_explicitly_covered(self) -> None:
+        nonnegative = {
+            "growth_scale", "uptake_scale", "death_rate_per_h",
+            "glucose_half_saturation_mm", "glutamine_half_saturation_mm",
+            "oxygen_half_saturation_percent", "lactate_inhibition_mm",
+            "oxygen_transfer_per_h",
+        }
+        positive = {"drug_ic50_um", "drug_hill", "buffer_capacity_mm_per_ph"}
+        self.assertEqual(nonnegative | positive, {field.name for field in fields(ModelParameters)})
+        for name in sorted(nonnegative | positive):
+            invalid_values = [-1.0, 0.0] if name in positive else [-1.0]
+            for invalid in invalid_values:
+                with self.subTest(parameter=name, value=invalid):
+                    cell = CellCulture("a549")
+                    setattr(cell.parameters, name, invalid)
+                    before = cell.snapshot()
+                    with self.assertRaisesRegex(ValueError, name):
+                        cell.step(0.25)
+                    self.assertEqual(cell.snapshot(), before)
 
     def test_invalid_model_parameter_does_not_partially_repair_culture_state(self) -> None:
         cell = CellCulture("hela")
