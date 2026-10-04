@@ -430,6 +430,8 @@ class CellCultureTestCase(unittest.TestCase):
         cell = CellCulture("hela", viable_cells=1.7e308)
         cell.dead_cells = 1.7e308
         self.assertAlmostEqual(cell.viability_percent, 50.0)
+        with self.assertRaisesRegex(ValueError, "总细胞数超出.*有限数值范围"):
+            _ = cell.total_cells
 
         cell = CellCulture("a549", surface_area_cm2=2e303, viable_cells=1e308)
         cell.parameters.growth_scale = 1000.0
@@ -449,11 +451,13 @@ class CellCultureTestCase(unittest.TestCase):
                               ("culture_volume_ml", float("inf"))):
             with self.subTest(name=name, value=invalid):
                 cell = CellCulture("hela")
+                before = (cell.time_h, cell.viable_cells, cell.glucose_mm)
                 setattr(cell, name, invalid)
-                before = cell.snapshot()
                 with self.assertRaisesRegex(ValueError, f"{name}|数值安全范围"):
                     cell.step(0.25)
-                self.assertEqual(cell.snapshot(), before)
+                self.assertEqual((cell.time_h, cell.viable_cells, cell.glucose_mm), before)
+                with self.assertRaisesRegex(ValueError, f"{name}|数值安全范围"):
+                    _ = cell.carrying_capacity
 
     def test_negative_rate_or_uptake_cannot_create_negative_outputs(self) -> None:
         for name in ("death_rate_per_h", "uptake_scale", "oxygen_transfer_per_h"):

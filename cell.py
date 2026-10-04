@@ -102,7 +102,22 @@ class CellCulture:
 
     @property
     def total_cells(self) -> float:
-        return self.viable_cells + self.dead_cells
+        counts = (self.viable_cells, self.dead_cells)
+        if any(
+            is_boolean_scalar(value) or not isinstance(value, (int, float))
+            for value in counts
+        ):
+            raise ValueError("活细胞数和死细胞数必须是有限非负数。")
+        try:
+            viable, dead = (float(value) for value in counts)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError("活细胞数和死细胞数必须是有限非负数。") from None
+        if not all(isfinite(value) and value >= 0.0 for value in (viable, dead)):
+            raise ValueError("活细胞数和死细胞数必须是有限非负数。")
+        total = viable + dead
+        if not isfinite(total):
+            raise ValueError("总细胞数超出当前软件的有限数值范围；请检查培养状态。")
+        return total
 
     @property
     def viability_percent(self) -> float:
@@ -117,6 +132,7 @@ class CellCulture:
 
     @property
     def carrying_capacity(self) -> float:
+        self._validate_culture_dimensions()
         return self.profile.max_density_cell_cm2 * self.surface_area_cm2
 
     @property
