@@ -31,6 +31,36 @@ class AppStateTestCase(unittest.TestCase):
         self.assertIn("pH 偏离推荐范围", app.warning[0].value)
         self.assertEqual(len(app.exception), 0)
 
+    def test_long_session_histories_are_trimmed_to_checkpoint_limits(self) -> None:
+        app_path = Path(__file__).resolve().parents[1] / "app.py"
+        app = AppTest.from_file(app_path).run(timeout=30)
+        single_cell_row = dict(app.session_state["single_cell_history"][-1])
+        colony_row = dict(app.session_state["microcolony_history"][-1])
+        single_cell_event = {"time_h": 0.0, "event": "测试记录"}
+        culture_event = {"time_h": 0.0, "event": "测试记录", "details": ""}
+        app.session_state["single_cell_history"] = [
+            {**single_cell_row, "time_h": float(i)} for i in range(2005)
+        ]
+        app.session_state["microcolony_history"] = [
+            {**colony_row, "time_h": float(i)} for i in range(2005)
+        ]
+        app.session_state["single_cell_events"] = [
+            {**single_cell_event, "time_h": float(i)} for i in range(505)
+        ]
+        app.session_state["events"] = [
+            {**culture_event, "time_h": float(i)} for i in range(505)
+        ]
+
+        app.run(timeout=30)
+
+        self.assertEqual(len(app.session_state["single_cell_history"]), 2000)
+        self.assertEqual(len(app.session_state["microcolony_history"]), 2000)
+        self.assertEqual(len(app.session_state["single_cell_events"]), 500)
+        self.assertEqual(len(app.session_state["events"]), 500)
+        self.assertEqual(app.session_state["single_cell_history"][0]["time_h"], 5.0)
+        self.assertEqual(app.session_state["single_cell_events"][0]["time_h"], 5.0)
+        self.assertEqual(len(app.exception), 0)
+
     def test_visual_overview_and_action_feedback_are_present(self) -> None:
         app_path = Path(__file__).resolve().parents[1] / "app.py"
         app = AppTest.from_file(app_path).run(timeout=30)

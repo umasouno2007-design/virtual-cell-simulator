@@ -813,14 +813,24 @@ def initialize_state() -> None:
         st.session_state.scheduled_actions = []
     if "experiment_metadata" not in st.session_state:
         st.session_state.experiment_metadata = EXPERIMENT_METADATA_DEFAULTS.copy()
-    # 连续模拟可能运行数天；界面只保留最近采样点，防止曲线和状态文件无限增长。
-    st.session_state.history = st.session_state.history[-MAX_HISTORY_POINTS:]
-    st.session_state.intracellular_history = (
-        st.session_state.intracellular_history[-MAX_HISTORY_POINTS:]
-    )
-    st.session_state.cell_communication_history = (
-        st.session_state.cell_communication_history[-MAX_HISTORY_POINTS:]
-    )
+    # 保持内存、检查点与导出一致的保留上限；重载旧会话时也立即限长。
+    retained_record_limits = {
+        "history": MAX_HISTORY_POINTS,
+        "intracellular_history": MAX_HISTORY_POINTS,
+        "cell_communication_history": MAX_HISTORY_POINTS,
+        "single_cell_history": MAX_HISTORY_POINTS,
+        "microcolony_history": MAX_HISTORY_POINTS,
+        "events": 500,
+        "single_cell_events": 500,
+        "scheduled_actions": 100,
+        "intracellular_samples": 500,
+        "virtual_assay_rows": 2000,
+        "intracellular_notes": 500,
+    }
+    for key, limit in retained_record_limits.items():
+        records = st.session_state.get(key)
+        if isinstance(records, list) and len(records) > limit:
+            st.session_state[key] = records[-limit:]
 
 
 def reset_simulation(profile_key: str, preset_name: str, volume: float, area: float) -> None:
