@@ -263,6 +263,7 @@ class MicrocolonyState:
             if (
                 type(self.cell_count) is not int
                 or not 3 <= self.cell_count <= 50
+                or type(self.communication_enabled) is not bool
                 or len(self.cells) != self.cell_count
                 or not isfinite(float(self.time_h))
                 or self.time_h < 0
@@ -298,6 +299,8 @@ class MicrocolonyState:
                 if abs(cell.state.time_h - self.time_h) > 1e-6:
                     return False
                 if cell.state.cycle_phase not in {"G1", "S", "G2", "M"}:
+                    return False
+                if cell.state.cycle_phase != cell.state._phase_from_progress(float(cell.state.cycle_progress_percent)):
                     return False
                 if not -10.0 <= cell.baseline_offset <= 10.0 or not (0.0 <= cell.x <= 7.0 and 0.0 <= cell.y <= 6.0):
                     return False

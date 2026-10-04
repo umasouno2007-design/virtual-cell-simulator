@@ -81,6 +81,15 @@ class MicroenvironmentAndMicrocolonyTests(unittest.TestCase):
         self.assertEqual(colony.time_h, 1e20)
         self.assertEqual([cell.state.snapshot() for cell in colony.cells], before)
 
+    def test_invalid_communication_switch_is_rejected_before_colony_step(self) -> None:
+        colony = MicrocolonyState(cell_count=3)
+        colony.communication_enabled = "false"
+        before = [cell.state.snapshot() for cell in colony.cells]
+        with self.assertRaisesRegex(ValueError, "越界或非有限状态"):
+            colony.step(MicroenvironmentState(), 0.25)
+        self.assertEqual(colony.time_h, 0.0)
+        self.assertEqual([cell.state.snapshot() for cell in colony.cells], before)
+
     def test_culture_derived_environment_matches_direct_schema(self) -> None:
         culture = CellCulture("a549")
         derived = MicroenvironmentState.from_culture(culture)

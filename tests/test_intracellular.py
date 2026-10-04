@@ -108,6 +108,13 @@ class IntracellularStateTestCase(unittest.TestCase):
             else:
                 self.assertEqual(state.snapshot()[name], value)
 
+    def test_cycle_phase_mismatch_is_rejected_before_single_cell_step(self) -> None:
+        state = IntracellularState(cycle_progress_percent=60.0)
+        before = state.snapshot()
+        with self.assertRaisesRegex(ValueError, "单细胞状态包含越界或非有限值"):
+            state.step(MicroenvironmentState(), 0.25)
+        self.assertEqual(state.snapshot(), before)
+
     def test_six_hour_advance_matches_six_one_hour_advances(self) -> None:
         environment = MicroenvironmentState(
             local_oxygen_availability=0.25, glucose_mm=2.0, ph=7.0, drug_um=12.0,

@@ -79,7 +79,10 @@ class IntracellularState:
             return False
         if any(not 0.0 <= float(getattr(self, name)) <= 100.0 for name in percent_fields):
             return False
-        return self.cycle_phase in {"G1", "S", "G2", "M"}
+        return (
+            self.cycle_phase in {"G1", "S", "G2", "M"}
+            and self.cycle_phase == self._phase_from_progress(self.cycle_progress_percent)
+        )
 
     def step(self, environment: MicroenvironmentState | "CellCulture", dt_h: float = 1.0) -> None:
         """根据培养环境推进细胞器与命运的相对指数。
