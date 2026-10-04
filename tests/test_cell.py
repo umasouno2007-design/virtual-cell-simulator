@@ -209,6 +209,26 @@ class CellCultureTestCase(unittest.TestCase):
         self.assertEqual(len(history), 13)
         self.assertAlmostEqual(cell.time_h, 6.0)
 
+    def test_run_steps_rolls_back_the_whole_batch_when_a_later_step_fails(self) -> None:
+        cell, history = new_simulation("a549")
+        before_cell = cell.snapshot()
+        before_history = [row.copy() for row in history]
+        original_step = cell.step
+        calls = 0
+
+        def fail_second_step(dt_h: float) -> None:
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("injected failure")
+            original_step(dt_h)
+
+        cell.step = fail_second_step
+        with self.assertRaisesRegex(RuntimeError, "injected failure"):
+            run_steps(cell, history, steps=3, dt_h=1.0)
+        self.assertEqual(cell.snapshot(), before_cell)
+        self.assertEqual(history, before_history)
+
     def test_run_steps_rejects_non_progressing_or_truncated_step(self) -> None:
         cell, history = new_simulation("a549")
         for invalid in (0.0, -1.0, 7.0, float("nan"), float("inf"), True):
