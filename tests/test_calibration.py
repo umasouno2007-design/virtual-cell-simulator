@@ -1,6 +1,7 @@
 """两参数粗校准的回归测试。"""
 
 import unittest
+from math import isclose
 
 import pandas as pd
 
@@ -90,6 +91,19 @@ class CalibrationTestCase(unittest.TestCase):
             "viable_cells_residual": [1e308, 1e308],
         })
         self.assertEqual(_score(opposite_sign), 1.0)
+
+        repeated_metrics = pd.DataFrame({
+            f"{field}_{suffix}": [0.0, 0.0, 0.0]
+            for field in ("viable_cells", "glucose_mM", "lactate_mM")
+            for suffix in ("observed",)
+        })
+        for field in ("viable_cells", "glucose_mM", "lactate_mM"):
+            repeated_metrics[f"{field}_residual"] = [1.7e308] * 3
+        self.assertTrue(isclose(
+            _score(repeated_metrics, {field: 1e308 for field in ("viable_cells", "glucose_mM", "lactate_mM")}),
+            1.7e308,
+            rel_tol=1e-15,
+        ))
 
     def test_fit_uses_measurements_and_returns_bounded_parameters(self) -> None:
         cell = CellCulture("hela")

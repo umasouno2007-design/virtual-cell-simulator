@@ -130,6 +130,16 @@ def _validated_weights(weights: dict[str, float] | None) -> dict[str, float]:
     return resolved
 
 
+def _stable_rms(values: list[float]) -> float:
+    """Compute RMS without squaring unscaled extreme finite residuals."""
+
+    scale = max((abs(value) for value in values), default=0.0)
+    if scale == 0.0:
+        return 0.0
+    mean_scaled_square = fsum((value / scale) ** 2 for value in values) / len(values)
+    return scale * sqrt(mean_scaled_square)
+
+
 def _score(comparison: pd.DataFrame, weights: dict[str, float] | None = None) -> float:
     """计算按观测量纲归一化后的加权 RMSE；权重是可解释偏好而非统计权重。"""
 
@@ -193,12 +203,11 @@ def _score(comparison: pd.DataFrame, weights: dict[str, float] | None = None) ->
         (weight / maximum_weight, residuals)
         for weight, _, residuals in weighted_residuals
     ]
-    numerator = hypot(*(
-        sqrt(weight) * hypot(*residuals)
+    total_scaled_weight = fsum(weight * len(residuals) for weight, residuals in scaled_terms)
+    return hypot(*(
+        sqrt(weight * len(residuals) / total_scaled_weight) * _stable_rms(residuals)
         for weight, residuals in scaled_terms
     ))
-    denominator = sqrt(fsum(weight * len(residuals) for weight, residuals in scaled_terms))
-    return numerator / denominator
 
 
 def fit_growth_and_uptake(
