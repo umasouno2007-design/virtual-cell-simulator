@@ -32,6 +32,16 @@ class CalibrationTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "校准时间列不能包含布尔值"):
             fit_with_temporal_holdout(cell, [cell.snapshot()], measurements)
 
+    def test_oversized_observation_is_reported_as_quality_error_not_overflow(self) -> None:
+        cell = CellCulture("hela")
+        huge = 10**10000
+        measurements = pd.DataFrame({
+            "time_h": pd.Series([0, 24, 48], dtype=object),
+            "viable_cells": pd.Series([100, huge, 180], dtype=object),
+        })
+        with self.assertRaisesRegex(ValueError, "无穷值"):
+            fit_growth_and_uptake(cell, [cell.snapshot()], measurements)
+
     def test_oversized_time_and_weight_inputs_are_rejected_before_search(self) -> None:
         cell = CellCulture("a549")
         initial = cell.snapshot()
@@ -58,6 +68,10 @@ class CalibrationTestCase(unittest.TestCase):
         })
         with self.assertRaisesRegex(ValueError, "校准指标权重"):
             _score(comparison, {"viable_cells": huge})
+        for invalid_weights in ([], {"viable_cells": True}, {"unknown_metric": 1.0}):
+            with self.subTest(score_weights=invalid_weights):
+                with self.assertRaisesRegex(ValueError, "权重"):
+                    _score(comparison, invalid_weights)
 
     def test_fit_uses_measurements_and_returns_bounded_parameters(self) -> None:
         cell = CellCulture("hela")

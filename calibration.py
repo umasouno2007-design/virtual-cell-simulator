@@ -6,7 +6,7 @@ from math import isclose, isfinite
 import pandas as pd
 
 from cell import CellCulture, ModelParameters
-from data_quality import quality_report
+from data_quality import numeric_series, quality_report
 from experiment_data import FIELD_LABELS, comparison_frame, residual_summary
 from version import MODEL_VERSION
 from numeric_utils import is_boolean_scalar
@@ -91,9 +91,30 @@ def replay_from_initial(template: CellCulture, initial: dict, target_times, grow
     return cell, history
 
 
+def _validated_weights(weights: dict[str, float] | None) -> dict[str, float]:
+    """校验公开校准入口与误差核共用的指标权重配置。"""
+
+    if weights is not None and not isinstance(weights, dict):
+        raise ValueError("校准指标权重必须是以指标名称为键的映射。")
+    unknown_weights = set(weights or {}) - set(FIT_FIELDS)
+    if unknown_weights:
+        unknown = "、".join(sorted(str(name) for name in unknown_weights))
+        raise ValueError(f"校准权重包含不支持的指标：{unknown}。可用指标：{'、'.join(FIT_FIELDS)}。")
+    try:
+        if any(is_boolean_scalar(value) for value in (weights or {}).values()):
+            raise TypeError("布尔权重不是数值输入。")
+        resolved = {field: float((weights or {}).get(field, 1.0)) for field in FIT_FIELDS}
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("校准指标权重必须为数值。") from None
+    if any(not isfinite(value) or value < 0 for value in resolved.values()):
+        raise ValueError("校准指标权重必须是有限的非负数。")
+    return resolved
+
+
 def _score(comparison: pd.DataFrame, weights: dict[str, float] | None = None) -> float:
     """计算按观测量纲归一化后的加权 RMSE；权重是可解释偏好而非统计权重。"""
 
+    resolved_weights = _validated_weights(weights)
     weighted_squared_error = 0.0
     total_weight = 0.0
     for field in FIT_FIELDS:
@@ -101,12 +122,7 @@ def _score(comparison: pd.DataFrame, weights: dict[str, float] | None = None) ->
         residual = f"{field}_residual"
         if observed not in comparison or residual not in comparison:
             continue
-        try:
-            weight = float((weights or {}).get(field, 1.0))
-        except (TypeError, ValueError, OverflowError):
-            raise ValueError("校准指标权重必须是有限的非负数。") from None
-        if not isfinite(weight) or weight < 0:
-            raise ValueError("校准指标权重必须是有限的非负数。")
+        weight = resolved_weights[field]
         if weight == 0:
             continue
         if comparison[observed].notna().sum() < 2:
@@ -143,24 +159,11 @@ def fit_growth_and_uptake(
         raise ValueError("粗校准至少需要两个实测时间点。")
     eligible = [
         field for field in FIT_FIELDS
-        if field in measurements and pd.to_numeric(measurements[field], errors="coerce").notna().sum() >= 2
+        if field in measurements and numeric_series(measurements[field]).notna().sum() >= 2
     ]
     if not eligible:
         raise ValueError("请至少提供活细胞数、葡萄糖或乳酸中的一个指标，且不少于两个时间点。")
-    if weights is not None and not isinstance(weights, dict):
-        raise ValueError("校准指标权重必须是以指标名称为键的映射。")
-    unknown_weights = set(weights or {}) - set(FIT_FIELDS)
-    if unknown_weights:
-        unknown = "、".join(sorted(str(name) for name in unknown_weights))
-        raise ValueError(f"校准权重包含不支持的指标：{unknown}。可用指标：{'、'.join(FIT_FIELDS)}。")
-    try:
-        if any(is_boolean_scalar(value) for value in (weights or {}).values()):
-            raise TypeError("布尔权重不是数值输入。")
-        resolved_weights = {field: float((weights or {}).get(field, 1.0)) for field in FIT_FIELDS}
-    except (TypeError, ValueError, OverflowError):
-        raise ValueError("校准指标权重必须为数值。") from None
-    if any(not isfinite(value) or value < 0 for value in resolved_weights.values()):
-        raise ValueError("校准指标权重必须是有限的非负数。")
+    resolved_weights = _validated_weights(weights)
     if not any(resolved_weights[field] > 0 for field in eligible):
         raise ValueError("至少一个具备观测值的校准指标权重必须大于 0。")
     if not model_history:
@@ -206,7 +209,7 @@ def fit_growth_and_uptake(
                 f"模拟历史包含中途培养干预（{name}，t={event_time:g} h）；"
                 "当前两参数网格不重放干预，请从干预后的场景重新开始并匹配实测时间原点。"
             )
-    measurement_times = pd.to_numeric(measurements["time_h"], errors="coerce")
+    measurement_times = numeric_series(measurements["time_h"])
     if measurement_times.isna().any() or not measurement_times.map(isfinite).all():
         raise ValueError("粗校准时间列包含缺失或非有限值，无法与模拟时间轴对齐。")
     if (measurement_times < 0).any():
@@ -223,13 +226,13 @@ def fit_growth_and_uptake(
     for field in FIT_FIELDS:
         if field not in measurements:
             continue
-        values = pd.to_numeric(measurements[field], errors="coerce")
+        values = numeric_series(measurements[field])
         if (values.notna() & ~values.map(isfinite)).any():
             raise ValueError(f"{field} 包含无穷值；请先修正数据质量问题。")
         if (values.dropna() < 0).any():
             raise ValueError(f"{field} 包含负值；请先核对单位或数据质量。")
     if "viability_percent" in measurements:
-        viability = pd.to_numeric(measurements["viability_percent"], errors="coerce").dropna()
+        viability = numeric_series(measurements["viability_percent"]).dropna()
         if (viability > 100.0).any():
             raise ValueError("存活率不能超过 100%；请核对输入是否为百分比。")
     # 直接调用网格搜索也须经过与界面相同的质量门槛。否则未参与拟合的
@@ -243,7 +246,7 @@ def fit_growth_and_uptake(
         for field in FIT_FIELDS:
             if field not in measurements or field not in initial:
                 continue
-            observed = pd.to_numeric(start_rows[field], errors="coerce").iloc[0]
+            observed = numeric_series(start_rows[field]).iloc[0]
             if pd.notna(observed) and not isclose(float(observed), float(initial[field]), rel_tol=1e-6, abs_tol=1e-9):
                 initial_warnings.append(
                     f"{FIELD_LABELS[field]}的起点观测与模拟初值不同；两个缩放参数不能修正起点差异，"
@@ -282,7 +285,7 @@ def fit_with_temporal_holdout(
         lambda value: is_boolean_scalar(value) if pd.notna(value) else False
     ).any():
         raise ValueError("校准时间列不能包含布尔值；True/False 不能作为 1/0 小时使用。")
-    times = pd.to_numeric(measurements["time_h"], errors="coerce")
+    times = numeric_series(measurements["time_h"])
     if times.isna().any() or not times.map(isfinite).all() or (times < 0).any():
         raise ValueError("时间列必须是有限非负小时数，才能划分训练与留出点。")
     if times.duplicated().any():
@@ -302,7 +305,7 @@ def fit_with_temporal_holdout(
     for field in FIT_FIELDS:
         if field not in ordered:
             continue
-        values = pd.to_numeric(ordered[field], errors="coerce")
+        values = numeric_series(ordered[field])
         if (values.notna() & ~values.map(isfinite)).any() or (values.dropna() < 0).any():
             raise ValueError(f"{field} 含无效观测；请先处理整个数据集，再划分留出点。")
     holdout_count = max(2, round(len(ordered) * 0.2)) if len(ordered) >= 5 else 0
