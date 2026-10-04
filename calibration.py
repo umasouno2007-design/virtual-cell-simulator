@@ -184,7 +184,14 @@ def _score(comparison: pd.DataFrame, weights: dict[str, float] | None = None) ->
     )
     if maximum_weight <= float_info.max / total_points:
         maximum_weighted_points = maximum_weight * total_points
-        safe_residual_limit = sqrt(float_info.max / maximum_weighted_points)
+        # The legacy path first squares the unweighted residual, so tiny
+        # weights cannot make an overflowing square safe retroactively.
+        safe_residual_limit = sqrt(float_info.max)
+        if maximum_weighted_points > 0.0:
+            safe_residual_limit = min(
+                safe_residual_limit,
+                sqrt(float_info.max / maximum_weighted_points),
+            )
     else:
         safe_residual_limit = 0.0
     if maximum_absolute_residual <= safe_residual_limit:

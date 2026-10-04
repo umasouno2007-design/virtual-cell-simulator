@@ -104,6 +104,13 @@ class CalibrationTestCase(unittest.TestCase):
             1.7e308,
             rel_tol=1e-15,
         ))
+        self.assertEqual(
+            _score(
+                comparison,
+                {"viable_cells": 1e-308},
+            ),
+            1e308,
+        )
 
     def test_fit_uses_measurements_and_returns_bounded_parameters(self) -> None:
         cell = CellCulture("hela")
