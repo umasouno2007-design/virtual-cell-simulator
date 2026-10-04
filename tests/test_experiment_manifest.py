@@ -21,6 +21,10 @@ class ExperimentManifestTestCase(unittest.TestCase):
         self.assertEqual(manifest["experiment"]["profile_key"], "hela")
         self.assertIn("growth_scale", manifest["parameters"])
         self.assertEqual(manifest["history_summary"]["point_count"], 1)
+        self.assertEqual(
+            manifest["history_summary"]["scope"],
+            "currently_retained_window_may_be_truncated",
+        )
         self.assertEqual(manifest["events"][0]["event"], "创建实验")
         self.assertEqual(manifest["scheduled_actions"][0]["at_time_h"], 24)
         self.assertEqual(manifest["experiment_metadata"]["passage_number"], "P12")

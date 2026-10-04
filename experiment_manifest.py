@@ -53,6 +53,7 @@ def build_manifest(
             "point_count": len(history),
             "first_time_h": history[0].get("time_h") if history else None,
             "last_time_h": history[-1].get("time_h") if history else None,
+            "scope": "currently_retained_window_may_be_truncated",
         },
         "events": deepcopy(events),
         "scheduled_actions": deepcopy(scheduled_actions or []),
