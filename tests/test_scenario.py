@@ -2,11 +2,23 @@ import unittest
 
 from scenario import export_scenario, import_scenario
 from cell import CellCulture
+from json_payload import MAX_JSON_PAYLOAD_BYTES, decode_json_object
 from experiment_data import measurement_fingerprint
 from version import MODEL_VERSION
 
 
 class ScenarioTests(unittest.TestCase):
+    def test_json_decoder_bounds_payload_size_and_nested_depth(self):
+        oversized = b" " * (MAX_JSON_PAYLOAD_BYTES + 1)
+        for payload in (oversized, oversized.decode("ascii")):
+            with self.subTest(payload_type=type(payload).__name__):
+                with self.assertRaisesRegex(ValueError, "5 MiB"):
+                    decode_json_object(payload)
+
+        deeply_nested = "[" * 20_000 + "{}" + "]" * 20_000
+        with self.assertRaisesRegex(ValueError, "嵌套层级过深"):
+            decode_json_object(deeply_nested)
+
     def test_optional_data_fingerprint_round_trips_without_raw_csv(self):
         fingerprint = measurement_fingerprint(b"time_h,viable_cells\n0,100\n24,200\n")
         payload = export_scenario(CellCulture("a549"), data_file_fingerprint=fingerprint)
