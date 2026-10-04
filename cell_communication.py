@@ -12,6 +12,8 @@ from dataclasses import asdict, dataclass
 from math import ceil, exp, isfinite, sqrt
 from typing import TYPE_CHECKING
 
+from intracellular import MAX_INTERNAL_STEP_H
+
 if TYPE_CHECKING:
     from intracellular import IntracellularState
 
@@ -62,6 +64,13 @@ class CellCommunicationState:
         if not isfinite(dt_h) or dt_h < 0.0 or dt_h > 24.0:
             raise ValueError("通信层时间步长必须是 0–24 h 内的有限数值。")
         if dt_h == 0.0:
+            return
+        if dt_h > MAX_INTERNAL_STEP_H:
+            remaining_h = dt_h
+            while remaining_h > 1e-12:
+                substep_h = min(MAX_INTERNAL_STEP_H, remaining_h)
+                self.step(intracellular, substep_h, feedback_enabled=feedback_enabled)
+                remaining_h -= substep_h
             return
 
         # 只复用既有状态：较高 ROS/ER/凋亡及较低 ATP 共同提高子群压力驱动。

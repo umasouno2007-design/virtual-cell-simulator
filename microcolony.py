@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from math import exp, isfinite
 
 from cell_communication import _clamp
-from intracellular import IntracellularState
+from intracellular import MAX_INTERNAL_STEP_H, IntracellularState
 from microenvironment import MicroenvironmentState
 
 
@@ -111,6 +111,13 @@ class MicrocolonyState:
         if dt_h > 6.0:
             raise ValueError("微群体单步时长不能超过 6 h；请分步推进。")
         if dt_h == 0.0:
+            return
+        if dt_h > MAX_INTERNAL_STEP_H:
+            remaining_h = dt_h
+            while remaining_h > 1e-12:
+                substep_h = min(MAX_INTERNAL_STEP_H, remaining_h)
+                self.step(environment, substep_h)
+                remaining_h -= substep_h
             return
         environment = environment.normalized()
         releases = [self._release(cell) for cell in self.cells]

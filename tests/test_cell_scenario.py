@@ -266,7 +266,8 @@ class CellScenarioTests(unittest.TestCase):
         self.assertEqual(len(compact["history"]), 3)
         restored, _ = import_microcolony_scenario(compact)
         self.assertEqual(restored.history, compact["history"])
-        self.assertEqual(len(payload["history"]), 9)
+        # 每小时按四个 0.25 h 内部子步记录，2 h 加初始快照共 9 个时点。
+        self.assertEqual(len(payload["history"]), 9 * colony.cell_count)
 
     def test_runtime_history_requires_a_complete_timepoint(self):
         payload = export_microcolony_scenario(MicrocolonyState(cell_count=3), MicroenvironmentState())

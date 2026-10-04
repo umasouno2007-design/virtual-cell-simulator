@@ -5,7 +5,7 @@ import math
 import unittest
 
 from cell import CellCulture
-from intracellular import IntracellularState
+from intracellular import MAX_INTERNAL_STEP_H, IntracellularState
 from microcolony import MicrocolonyState
 from microenvironment import MicroenvironmentState
 
@@ -172,13 +172,26 @@ class MicroenvironmentAndMicrocolonyTests(unittest.TestCase):
                 colony.step(environment, 6.0)
                 self.assertTrue(colony.finite())
                 self.assertEqual(len(colony.cells), count)
-                self.assertEqual(len(colony.history), 2 * count)
+                expected_steps = round(6.0 / MAX_INTERNAL_STEP_H)
+                self.assertEqual(len(colony.history), (expected_steps + 1) * count)
                 for cell in colony.cells:
                     numeric_state = (
                         value for value in cell.state.snapshot().values()
                         if isinstance(value, (int, float))
                     )
                     self.assertTrue(all(math.isfinite(value) for value in numeric_state))
+
+    def test_six_hour_colony_advance_matches_six_hourly_requests(self) -> None:
+        environment = MicroenvironmentState(local_oxygen_availability=0.25, glucose_mm=2.0, drug_um=12.0)
+        one_step = MicrocolonyState(cell_count=5, communication_enabled=True)
+        repeated_steps = MicrocolonyState(cell_count=5, communication_enabled=True)
+
+        one_step.step(environment, 6.0)
+        for _ in range(6):
+            repeated_steps.step(environment, 1.0)
+
+        self.assertEqual(one_step.summary(), repeated_steps.summary())
+        self.assertEqual(one_step.history, repeated_steps.history)
 
     def test_reset_can_record_the_active_environment_without_fabricating_initial_inputs(self) -> None:
         colony = MicrocolonyState(cell_count=3)
