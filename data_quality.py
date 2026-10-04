@@ -11,6 +11,8 @@ from version import MODEL_VERSION
 def numeric_series(values: pd.Series) -> pd.Series:
     """将序列转换为数值；float64 不可表示的整数保留为正/负无穷标记。"""
 
+    if not isinstance(values, pd.Series):
+        raise ValueError("数值转换需要单列 Pandas Series。")
     try:
         return pd.to_numeric(values, errors="coerce")
     except OverflowError:
@@ -29,6 +31,8 @@ def numeric_series(values: pd.Series) -> pd.Series:
 
 def quality_report(data: pd.DataFrame) -> dict:
     """返回阻止/警告/通过项；输入为已标准化且单位已声明的 DataFrame。"""
+    if not isinstance(data, pd.DataFrame):
+        raise ValueError("数据质量检查需要已标准化的 Pandas 表格。")
     blocked, warnings, passed = [], [], []
     invalid_metadata = False
 

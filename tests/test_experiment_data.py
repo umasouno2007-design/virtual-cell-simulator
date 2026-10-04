@@ -8,6 +8,12 @@ from experiment_data import comparison_frame, residual_summary, standardize_meas
 
 
 class ExperimentDataTestCase(unittest.TestCase):
+    def test_alignment_and_residual_apis_reject_wrong_container_types(self) -> None:
+        with self.assertRaisesRegex(ValueError, "两个 Pandas 表格"):
+            comparison_frame([], pd.DataFrame())
+        with self.assertRaisesRegex(ValueError, "对齐结果表格"):
+            residual_summary([])
+
     def test_chinese_headers_are_standardized(self) -> None:
         source = "时间,活细胞数,葡萄糖,pH\n0,100000,5.5,7.4\n24,180000,3.2,7.2\n".encode("utf-8-sig")
         data, notes = standardize_measurements(source)

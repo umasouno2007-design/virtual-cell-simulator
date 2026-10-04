@@ -5,6 +5,14 @@ from data_quality import quality_report
 
 
 class DataQualityTests(unittest.TestCase):
+    def test_quality_apis_reject_wrong_container_types_with_domain_errors(self):
+        from data_quality import numeric_series
+
+        with self.assertRaisesRegex(ValueError, "质量检查需要"):
+            quality_report({"time_h": [0, 24]})
+        with self.assertRaisesRegex(ValueError, "Pandas Series"):
+            numeric_series([0, 24])
+
     def test_negative_value_blocks_minimum_model_readiness(self):
         result = quality_report(pd.DataFrame({"time_h": [0, 24], "glucose_mM": [10, -1]}))
         self.assertFalse(result["is_minimum_model_ready"])

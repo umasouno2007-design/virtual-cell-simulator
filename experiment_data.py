@@ -168,6 +168,8 @@ def standardize_measurements(contents: bytes) -> tuple[pd.DataFrame, list[str]]:
 def comparison_frame(simulation: pd.DataFrame, measurements: pd.DataFrame) -> pd.DataFrame:
     """将标准化数值历史插值到观测时间点；拒绝把布尔值当成数值数据。"""
 
+    if not isinstance(simulation, pd.DataFrame) or not isinstance(measurements, pd.DataFrame):
+        raise ValueError("模拟—实测对齐需要两个 Pandas 表格。")
     if "time_h" not in simulation or "time_h" not in measurements:
         raise ValueError("模拟和实测数据都必须包含 time_h。")
     for label, frame in (("模拟", simulation), ("实测", measurements)):
@@ -199,6 +201,8 @@ def comparison_frame(simulation: pd.DataFrame, measurements: pd.DataFrame) -> pd
 def residual_summary(comparison: pd.DataFrame) -> pd.DataFrame:
     """按变量汇总可审阅的样本数、MAE 与 RMSE。"""
 
+    if not isinstance(comparison, pd.DataFrame):
+        raise ValueError("残差汇总需要模拟—实测对齐结果表格。")
     rows = []
     for field, label in FIELD_LABELS.items():
         residual_column = f"{field}_residual"
