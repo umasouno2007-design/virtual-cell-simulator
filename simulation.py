@@ -8,6 +8,7 @@ from numeric_utils import is_boolean_scalar
 
 
 History = List[Dict[str, float | str]]
+MAX_BATCH_STEPS = 10_000
 
 
 PRESETS = {
@@ -66,11 +67,16 @@ def run_steps(
     """原子地推进非负整数步，并为每步记录带单位的数据。
 
     参数校验或任一步推进/记录失败时，恢复调用前的培养状态和历史长度；
+    单次调用最多推进 10,000 步作为软件资源保护，不代表科学时长上限。
     培养量、时间及步长单位与 ``CellCulture`` 相同。
     """
 
-    if type(steps) is not int or steps < 0:
-        raise ValueError("模拟步数必须是非负整数。")
+    if not isinstance(cell, CellCulture):
+        raise ValueError("批量模拟需要有效的 CellCulture 对象。")
+    if not isinstance(history, list):
+        raise ValueError("模拟历史必须是可追加的列表。")
+    if type(steps) is not int or not 0 <= steps <= MAX_BATCH_STEPS:
+        raise ValueError(f"模拟步数必须是 0–{MAX_BATCH_STEPS:,} 范围内的整数。")
     if is_boolean_scalar(dt_h):
         raise ValueError("每步时长必须是 0–6 h 内的有限正数。")
     try:

@@ -246,13 +246,22 @@ class CellCultureTestCase(unittest.TestCase):
 
     def test_run_steps_rejects_non_integer_count_without_partial_progress(self) -> None:
         cell, history = new_simulation("a549")
-        for invalid in (-1, 1.5, True, "2", float("nan"), None):
+        for invalid in (-1, 1.5, True, "2", float("nan"), None, 10**10000, 10_001):
             with self.subTest(steps=invalid):
                 with self.assertRaisesRegex(ValueError, "模拟步数"):
                     run_steps(cell, history, invalid)
                 self.assertEqual(cell.time_h, 0.0)
                 self.assertEqual(len(history), 1)
         self.assertEqual(run_steps(cell, history, 0), 0)
+
+    def test_run_steps_rejects_wrong_state_and_history_containers(self) -> None:
+        cell, history = new_simulation("a549")
+        with self.assertRaisesRegex(ValueError, "CellCulture 对象"):
+            run_steps(object(), history, steps=0)
+        with self.assertRaisesRegex(ValueError, "历史必须是可追加的列表"):
+            run_steps(cell, tuple(history), steps=1)
+        self.assertEqual(cell.time_h, 0.0)
+        self.assertEqual(history, [cell.snapshot()])
 
     def test_direct_step_rejects_truncated_or_nonfinite_duration(self) -> None:
         cell = CellCulture("hela")
