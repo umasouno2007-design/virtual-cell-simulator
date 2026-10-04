@@ -90,6 +90,30 @@ class IntracellularStateTestCase(unittest.TestCase):
             state.step(CellCulture("hela"), 24.0)
         self.assertEqual(state.time_h, 0.0)
 
+    def test_six_hour_advance_matches_six_one_hour_advances(self) -> None:
+        environment = MicroenvironmentState(
+            local_oxygen_availability=0.25, glucose_mm=2.0, ph=7.0, drug_um=12.0,
+        )
+        one_step = IntracellularState()
+        repeated_steps = IntracellularState()
+
+        one_step.step(environment, 6.0)
+        for _ in range(6):
+            repeated_steps.step(environment, 1.0)
+
+        self.assertEqual(one_step.snapshot(), repeated_steps.snapshot())
+
+    def test_one_hour_advance_matches_quarter_hour_forecast_resolution(self) -> None:
+        environment = MicroenvironmentState(local_oxygen_availability=0.4, glucose_mm=3.0, drug_um=8.0)
+        one_step = IntracellularState()
+        quarter_steps = IntracellularState()
+
+        one_step.step(environment, 1.0)
+        for _ in range(4):
+            quarter_steps.step(environment, 0.25)
+
+        self.assertEqual(one_step.snapshot(), quarter_steps.snapshot())
+
     def test_relative_indices_remain_bounded_at_environment_endpoints(self) -> None:
         index_fields = (
             "atp_percent", "mitochondrial_potential_percent", "glycolysis_percent",

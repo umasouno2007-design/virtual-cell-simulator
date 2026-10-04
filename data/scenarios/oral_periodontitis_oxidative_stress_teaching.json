@@ -2,7 +2,7 @@
   "schema": "e-cell-data-inspired-hypothesis/v1",
   "id": "oral-os-score-to-teaching-pulse",
   "title": "口腔组织氧化应激表达模式：教学性单细胞压力脉冲",
-  "model_version": "1.2.1",
+  "model_version": "1.2.2",
   "source_data": {
     "analysis_status": "本地口腔单细胞项目的分析表/结果未包含在当前可访问工作区；以下观察来自公开论文报告，不代表本地项目结果。",
     "dataset": "GSE164241",

@@ -18,6 +18,8 @@ from microenvironment import MicroenvironmentState
 if TYPE_CHECKING:
     from cell import CellCulture
 
+MAX_INTERNAL_STEP_H = 0.25
+
 
 def _bounded(value: float, low: float = 0.0, high: float = 100.0) -> float:
     numeric = float(value)
@@ -65,6 +67,8 @@ class IntracellularState:
         输出 ATP 浓度、膜电位 mV、自噬通量、DNA 损伤灶数或凋亡细胞比例。
         所有线性组合只用于产生可解释的趋势与交互反馈。乳酸值随环境快照保存，
         但当前没有被单细胞状态方程直接使用；其酸碱影响需通过独立 pH 输入表达。
+        合法推进按不超过 0.25 h 的内部子步执行，与条件沙盒使用的数值步长一致，
+        以减少同一时长因调用方式不同而产生的离散差异；这不是实验采样频率建议。
         """
 
         if isinstance(dt_h, bool):
@@ -78,6 +82,13 @@ class IntracellularState:
         if dt_h > 6.0:
             raise ValueError("单细胞单步时长不能超过 6 h；请分步推进。")
         if dt_h == 0.0:
+            return
+        if dt_h > MAX_INTERNAL_STEP_H:
+            remaining_h = dt_h
+            while remaining_h > 1e-12:
+                substep_h = min(MAX_INTERNAL_STEP_H, remaining_h)
+                self.step(environment, substep_h)
+                remaining_h -= substep_h
             return
         # 兼容旧调用：现有培养工作流继续传入 CellCulture；新单细胞/微群体只传入环境。
         microenvironment = (

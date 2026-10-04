@@ -1,5 +1,5 @@
 {
-  "model_version": "1.2.1",
+  "model_version": "1.2.2",
   "case": "A549 teaching synthetic holdout validation",
   "data_kind": "teaching_synthetic_not_experimental",
   "data_source": "data/a549_teaching_synthetic.csv",
