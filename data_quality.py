@@ -14,28 +14,32 @@ def numeric_series(values: pd.Series) -> pd.Series:
 
     if not isinstance(values, pd.Series):
         raise ValueError("数值转换需要单列 Pandas Series。")
-    try:
-        return pd.to_numeric(values, errors="coerce")
-    except (OverflowError, TypeError, ValueError):
-        def convert(value):
-            try:
-                missing = pd.isna(value)
-            except (TypeError, ValueError):
-                missing = False
-            if isinstance(missing, bool) and missing:
-                return float("nan")
-            if is_boolean_scalar(missing) and bool(missing):
-                return float("nan")
-            try:
-                return float(value)
-            except OverflowError:
-                try:
-                    return float("-inf") if value < 0 else float("inf")
-                except (TypeError, ValueError):
-                    return float("nan")
-            except (TypeError, ValueError):
-                return float("nan")
 
+    def convert(value):
+        try:
+            missing = pd.isna(value)
+        except (TypeError, ValueError):
+            missing = False
+        if isinstance(missing, bool) and missing:
+            return float("nan")
+        if is_boolean_scalar(missing) and bool(missing):
+            return float("nan")
+        try:
+            return float(value)
+        except OverflowError:
+            try:
+                return float("-inf") if value < 0 else float("inf")
+            except (TypeError, ValueError):
+                return float("nan")
+        except (TypeError, ValueError):
+            return float("nan")
+
+    try:
+        converted = pd.to_numeric(values, errors="coerce")
+        if pd.api.types.is_complex_dtype(converted.dtype):
+            return pd.Series([convert(value) for value in values], index=values.index, dtype=float)
+        return converted
+    except (OverflowError, TypeError, ValueError):
         return pd.Series([convert(value) for value in values], index=values.index, dtype=float)
 
 

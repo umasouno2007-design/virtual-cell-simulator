@@ -23,6 +23,18 @@ class ExperimentDataTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "唯一列名"):
             residual_summary(comparison)
 
+    def test_alignment_and_residual_apis_reject_complex_numbers(self) -> None:
+        simulation = pd.DataFrame({"time_h": [0.0, 24.0], "viable_cells": [100.0, 120.0]})
+        observed = pd.DataFrame({"time_h": [0.0, 24.0], "viable_cells": [100 + 1j, 110 + 0j]})
+        with self.assertRaisesRegex(ValueError, "实数数值"):
+            comparison_frame(simulation, observed)
+        complex_time = pd.DataFrame({"time_h": [0 + 1j, 24 + 0j], "viable_cells": [100.0, 110.0]})
+        with self.assertRaisesRegex(ValueError, "实数小时数"):
+            comparison_frame(simulation, complex_time)
+        comparison = pd.DataFrame({"viable_cells_residual": pd.Series([1 + 1j])})
+        with self.assertRaisesRegex(ValueError, "实数数值"):
+            residual_summary(comparison)
+
     def test_chinese_headers_are_standardized(self) -> None:
         source = "时间,活细胞数,葡萄糖,pH\n0,100000,5.5,7.4\n24,180000,3.2,7.2\n".encode("utf-8-sig")
         data, notes = standardize_measurements(source)

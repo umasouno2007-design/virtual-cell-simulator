@@ -216,6 +216,8 @@ def comparison_frame(simulation: pd.DataFrame, measurements: pd.DataFrame) -> pd
             times = pd.to_numeric(frame["time_h"], errors="coerce")
         except (TypeError, ValueError, OverflowError):
             raise ValueError(f"{label}时间列必须是有限、非负的小时数。") from None
+        if pd.api.types.is_complex_dtype(times.dtype):
+            raise ValueError(f"{label}时间列必须是有限、非负的实数小时数。")
         if times.isna().any() or not times.map(_finite_or_missing).all() or (times < 0).any():
             raise ValueError(f"{label}时间列必须是有限、非负的小时数。")
         if label == "实测" and times.duplicated().any():
@@ -229,6 +231,8 @@ def comparison_frame(simulation: pd.DataFrame, measurements: pd.DataFrame) -> pd
                 numeric_values = pd.to_numeric(raw_values, errors="coerce")
             except (TypeError, ValueError, OverflowError):
                 raise ValueError(f"{label}字段 {FIELD_LABELS[field]}必须为数值或缺失值。") from None
+            if pd.api.types.is_complex_dtype(numeric_values.dtype):
+                raise ValueError(f"{label}字段 {FIELD_LABELS[field]}必须为实数数值或缺失值。")
             if (raw_values.notna() & numeric_values.isna()).any():
                 raise ValueError(f"{label}字段 {FIELD_LABELS[field]}包含无法解析的非空值。")
             if not numeric_values.map(_finite_or_missing).all():
@@ -281,6 +285,8 @@ def residual_summary(comparison: pd.DataFrame) -> pd.DataFrame:
             numeric_residual = pd.to_numeric(raw_residual, errors="coerce")
         except (TypeError, ValueError, OverflowError):
             raise ValueError(f"{label}残差必须为数值或缺失值。") from None
+        if pd.api.types.is_complex_dtype(numeric_residual.dtype):
+            raise ValueError(f"{label}残差必须为实数数值或缺失值。")
         if (raw_residual.notna() & numeric_residual.isna()).any():
             raise ValueError(f"{label}残差包含无法解析的非空值。")
         residual = numeric_residual.dropna()
