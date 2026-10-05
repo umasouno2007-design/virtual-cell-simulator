@@ -198,9 +198,12 @@ class AppStateTestCase(unittest.TestCase):
         self.assertIn("data-atp=", cell_diagram)
         for marker in (
             "cell-stage", "tag nucleus", "tag mitochondria", "tag rer",
-            "tag ser", "tag golgi", "tag lysosome", "mito-glow", "rosPulse",
+            "tag ser", "tag golgi", "tag lysosome", "status-grid",
         ):
             self.assertIn(marker, cell_diagram)
+        self.assertNotIn("mito-glow", cell_diagram)
+        self.assertNotIn("rosPulse", cell_diagram)
+        self.assertNotIn("backdrop-filter", cell_diagram)
         metric_grid = next(
             item for item in app.markdown
             if '<div class="vc-metric-grid">' in item.value
@@ -208,6 +211,8 @@ class AppStateTestCase(unittest.TestCase):
         self.assertIn("ATP 水平", metric_grid.value)
         self.assertIn("DNA 损伤", metric_grid.value)
         self.assertIn("胞质 Ca²⁺ 代理", metric_grid.value)
+        for ornament in ("✹", "⬡", "♻", "↗", "◷", "✦", "♥"):
+            self.assertNotIn(ornament, metric_grid.value)
         self.assertNotIn(" nM", metric_grid.value)
         self.assertTrue(any("不是实测胞质钙浓度" in item.value for item in app.caption))
         self.assertTrue(any("乳酸会记录到环境轨迹，但当前单细胞状态方程不直接使用" in item.value for item in app.caption))
@@ -481,7 +486,7 @@ class AppStateTestCase(unittest.TestCase):
         mitochondria.click().run(timeout=30)
         self.assertEqual(app.session_state["focused_organelle"], "mitochondria")
         self.assertIn("mitochondria", app.session_state["celldex_discovered"])
-        self.assertEqual(app.session_state["events"][-1]["event"], "探索细胞器")
+        self.assertEqual(app.session_state["events"][-1]["event"], "选择细胞器")
         self.assertEqual(len(app.exception), 0)
 
     def test_intracellular_virtual_sample_is_recorded_and_traceable(self) -> None:
